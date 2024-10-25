@@ -7,6 +7,10 @@ import { PlayerRating } from '../entities/PlayerRating';
 import { PlayerAbility } from '../entities/PlayerAbility';
 import { PlayerStats } from '../entities/PlayerStats';
 import { PlayerAnalysis } from '../entities/PlayerAnalysis';
+import { RosterRequirement } from '../entities/RosterRequirement';
+import { DraftSession } from '../entities/DraftSession';
+import { DraftPick } from '../entities/DraftPick';
+import { DraftRecommendation } from '../entities/DraftRecommendation';
 import * as dotenv from 'dotenv';
 
 dotenv.config();
@@ -26,7 +30,11 @@ export const AppDataSource = new DataSource({
         PlayerRating,
         PlayerAbility,
         PlayerStats,
-        PlayerAnalysis
+        PlayerAnalysis,
+        RosterRequirement,
+        DraftSession,
+        DraftPick,
+        DraftRecommendation
     ],
     synchronize: false,
     logging: true,

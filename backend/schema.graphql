@@ -8,6 +8,41 @@ type Archetype {
   label: String
 }
 
+"""
+A date-time string at UTC, such as 2007-12-03T10:15:30Z, compliant with the `date-time` format outlined in section 5.6 of the RFC 3339 profile of the ISO 8601 standard for representation of dates and times using the Gregorian calendar.This scalar is serialized to a string in ISO 8601 format and parsed from a string in ISO 8601 format.
+"""
+scalar DateTimeISO
+
+type DraftPick {
+  draftedPosition: String!
+  id: Int!
+  pickNumber: Int!
+  pickedAt: DateTimeISO!
+  player: Player!
+  roundNumber: Int!
+  session: DraftSession!
+}
+
+type DraftRecommendation {
+  id: Int!
+  pickNumber: Int!
+  player: Player!
+  reason: String!
+  recommendationScore: Float!
+  roundNumber: Int!
+  session: DraftSession!
+}
+
+type DraftSession {
+  createdAt: DateTimeISO!
+  draftPosition: Int!
+  id: Int!
+  picks: [DraftPick!]
+  recommendations: [DraftRecommendation!]
+  rosterNeeds: String!
+  status: String!
+}
+
 type Player {
   abilities: [PlayerAbility!]
   age: Int!
@@ -127,6 +162,12 @@ type Position {
 
 type Query {
   archetypes: [Archetype!]!
+  draftPick(id: Int!): DraftPick
+  draftPicks: [DraftPick!]!
+  draftRecommendation(id: Int!): DraftRecommendation
+  draftRecommendations: [DraftRecommendation!]!
+  draftSession(id: Int!): DraftSession
+  draftSessions: [DraftSession!]!
   player(id: Int): Player
   playerAbilities: [PlayerAbility!]!
   playerAnalyses: [PlayerAnalysis!]!
@@ -134,7 +175,18 @@ type Query {
   playerStats: [PlayerStats!]!
   players: [Player!]!
   positions: [Position!]!
+  rosterRequirement(id: Int!): RosterRequirement
+  rosterRequirements: [RosterRequirement!]!
   teams: [Team!]!
+}
+
+type RosterRequirement {
+  id: Int!
+  isRequired: Boolean!
+  maximumPlayers: Int!
+  minimumPlayers: Int!
+  position: String!
+  positionGroup: String!
 }
 
 type Team {

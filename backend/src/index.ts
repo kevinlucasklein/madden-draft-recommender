@@ -16,6 +16,10 @@ import { PlayerRatingResolver } from './resolvers/PlayerRatingResolver';
 import { PlayerAbilityResolver } from './resolvers/PlayerAbilityResolver';
 import { PlayerStatsResolver } from './resolvers/PlayerStatsResolver';
 import { PlayerAnalysisResolver } from './resolvers/PlayerAnalysisResolver';
+import { RosterRequirementResolver } from './resolvers/RosterRequirementResolver';
+import { DraftSessionResolver } from './resolvers/DraftSessionResolver';
+import { DraftPickResolver } from './resolvers/DraftPickResolver';
+import { DraftRecommendationResolver } from './resolvers/DraftRecommendationResolver';
 
 async function bootstrap() {
     // Initialize TypeORM
@@ -34,7 +38,11 @@ async function bootstrap() {
             PlayerRatingResolver,
             PlayerAbilityResolver,
             PlayerStatsResolver,
-            PlayerAnalysisResolver
+            PlayerAnalysisResolver,
+            RosterRequirementResolver,
+            DraftSessionResolver,
+            DraftPickResolver,
+            DraftRecommendationResolver
         ],
         validate: false,
         emitSchemaFile: true, // This will generate schema file
