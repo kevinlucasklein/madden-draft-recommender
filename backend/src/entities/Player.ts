@@ -1,40 +1,66 @@
-import { Entity, PrimaryGeneratedColumn, Column } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, OneToMany, OneToOne } from 'typeorm';
+import { ObjectType, Field, Int } from 'type-graphql';
+import { PlayerRating } from './PlayerRating';
+import { PlayerAbility } from './PlayerAbility';
+import { PlayerStats } from './PlayerStats';
+import { PlayerAnalysis } from './PlayerAnalysis';
 
-@Entity()
+@ObjectType()
+@Entity('players')
 export class Player {
-    @PrimaryGeneratedColumn()
+    @Field(() => Int)
+    @PrimaryGeneratedColumn({ name: 'player_id' })
     id!: number;
 
-    @Column({ type: 'varchar' })
+    @Field()
+    @Column({ name: 'first_name' })
     firstName!: string;
 
-    @Column({ type: 'varchar' })
+    @Field()
+    @Column({ name: 'last_name' })
     lastName!: string;
 
-    @Column({ type: 'varchar' })
-    position!: string;
+    @Field()
+    @Column()
+    height!: string;
 
-    @Column({ type: 'int' })
-    overall!: number;
+    @Field(() => Int)
+    @Column()
+    weight!: number;
 
-    // Computed property example
-    get fullName(): string {
-        return `${this.firstName} ${this.lastName}`;
-    }
+    @Field()
+    @Column()
+    college!: string;
 
-    // Additional fields you might want to consider:
-    @Column({ type: 'int', nullable: true })
-    jerseyNumber?: number;
+    @Field()
+    @Column()
+    handedness!: string;
 
-    @Column({ type: 'varchar', nullable: true })
-    team?: string;
+    @Field(() => Int)
+    @Column()
+    age!: number;
 
-    @Column({ type: 'date', nullable: true })
-    dateOfBirth?: Date;
+    @Field(() => Int)
+    @Column({ name: 'jersey_num' })
+    jerseyNumber!: number;
 
-    @Column({ type: 'int', nullable: true })
-    heightCm?: number;
+    @Field(() => Int)
+    @Column({ name: 'years_pro' })
+    yearsPro!: number;
 
-    @Column({ type: 'int', nullable: true })
-    weightKg?: number;
+    @Field(() => [PlayerRating], { nullable: true })
+    @OneToMany(() => PlayerRating, (rating: PlayerRating) => rating.player)
+    ratings?: PlayerRating[];
+
+    @Field(() => [PlayerAbility], { nullable: true })
+    @OneToMany(() => PlayerAbility, (ability: PlayerAbility) => ability.player)
+    abilities?: PlayerAbility[];
+
+    @Field(() => PlayerStats, { nullable: true })
+    @OneToOne(() => PlayerStats, (stats: PlayerStats) => stats.player)
+    stats?: PlayerStats;
+
+    @Field(() => PlayerAnalysis, { nullable: true })
+    @OneToOne(() => PlayerAnalysis, (analysis: PlayerAnalysis) => analysis.player)
+    analysis?: PlayerAnalysis;
 }

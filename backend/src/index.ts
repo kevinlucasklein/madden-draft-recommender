@@ -1,23 +1,51 @@
-// src/index.ts
-import 'reflect-metadata';
+import 'reflect-metadata'; // This must be the first import
 import express from 'express';
+import { ApolloServer } from '@apollo/server';
+import { expressMiddleware } from '@apollo/server/express4';
+import { json } from 'body-parser';
 import cors from 'cors';
-import { playerRouter } from './routes/playerRoutes';
+import { buildSchema } from 'type-graphql';
+import { PlayerResolver } from './resolvers/PlayerResolver';
 import { AppDataSource } from './config/database';
 
-const app = express();
-const port = process.env.PORT || 3000;
+async function bootstrap() {
+    // Initialize TypeORM
+    await AppDataSource.initialize();
 
-app.use(cors());
-app.use(express.json());
+    // Create Express app
+    const app = express();
 
-app.use('/api/players', playerRouter);
+    // Build TypeGraphQL schema
+    const schema = await buildSchema({
+        resolvers: [PlayerResolver],
+        validate: false,
+        emitSchemaFile: true, // This will generate schema file
+    });
 
-AppDataSource.initialize()
-    .then(() => {
-        app.listen(port, () => {
-            console.log(`Server running on port ${port}`);
-            console.log(`Database connection established`);
-        });
-    })
-    .catch(error => console.log('TypeORM connection error: ', error));
+    // Create Apollo Server
+    const apolloServer = new ApolloServer({
+        schema,
+    });
+
+    // Start Apollo Server
+    await apolloServer.start();
+
+    // Apply middleware
+    app.use(
+        '/graphql',
+        cors<cors.CorsRequest>(),
+        json(),
+        expressMiddleware(apolloServer)
+    );
+
+    // Start server
+    const PORT = process.env.PORT || 3000;
+    app.listen(PORT, () => {
+        console.log(`Server running on http://localhost:${PORT}/graphql`);
+    });
+}
+
+bootstrap().catch(error => {
+    console.error(error);
+    process.exit(1);
+});
