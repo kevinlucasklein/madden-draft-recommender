@@ -1,6 +1,7 @@
-import { Resolver, Query } from 'type-graphql';
+import { Resolver, Query, Arg, Int } from 'type-graphql';
 import { Player } from '../entities/Player';
 import { AppDataSource } from '../config/database';
+import { MoreThan } from 'typeorm';
 
 @Resolver(of => Player)
 export class PlayerResolver {
@@ -20,27 +21,58 @@ export class PlayerResolver {
                 stats: true,
                 analysis: true
             },
-            take: 10  // Limit to 10 players for testing
+            take: 10
         });
     }
 
     @Query(() => Player, { nullable: true })
-    async player() {
+    async player(
+        @Arg('id', () => Int, { nullable: true }) id?: number
+    ) {
         const playerRepository = AppDataSource.getRepository(Player);
-        return await playerRepository.findOne({
-            where: { id: 1 },  // Get first player
-            relations: {
-                ratings: {
-                    team: true,
-                    position: true,
-                    archetype: true
-                },
-                abilities: {
-                    rating: true
-                },
-                stats: true,
-                analysis: true
+
+        try {
+            if (id) {
+                // If ID is provided, find that specific player
+                return await playerRepository.findOne({
+                    where: { id },
+                    relations: {
+                        ratings: {
+                            team: true,
+                            position: true,
+                            archetype: true
+                        },
+                        abilities: {
+                            rating: true
+                        },
+                        stats: true,
+                        analysis: true
+                    }
+                });
+            } else {
+                // If no ID provided, get the first player by ID
+                return await playerRepository.findOne({
+                    where: { id: MoreThan(0) },  // This ensures we get the first player
+                    relations: {
+                        ratings: {
+                            team: true,
+                            position: true,
+                            archetype: true
+                        },
+                        abilities: {
+                            rating: true
+                        },
+                        stats: true,
+                        analysis: true
+                    },
+                    order: {
+                        id: 'ASC'
+                    }
+                });
             }
-        });
+        } catch (error) {
+            console.error('Error finding player:', error);
+            return null;
+        }
     }
 }

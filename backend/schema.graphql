@@ -126,8 +126,15 @@ type Position {
 }
 
 type Query {
-  player: Player
+  archetypes: [Archetype!]!
+  player(id: Int): Player
+  playerAbilities: [PlayerAbility!]!
+  playerAnalyses: [PlayerAnalysis!]!
+  playerRatings: [PlayerRating!]!
+  playerStats: [PlayerStats!]!
   players: [Player!]!
+  positions: [Position!]!
+  teams: [Team!]!
 }
 
 type Team {
