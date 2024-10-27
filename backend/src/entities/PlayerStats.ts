@@ -45,8 +45,8 @@ export class PlayerStats {
     awareness?: number;
 
     @Field(() => Float, { nullable: true })
-    @Column({ type: 'float', nullable: true })
-    bcvision?: number;
+    @Column({ name: 'bcvision', nullable: true })
+    bcvision!: number;
 
     @Field(() => Float, { nullable: true })
     @Column({ name: 'block_shedding', type: 'float', nullable: true })

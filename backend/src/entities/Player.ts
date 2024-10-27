@@ -1,8 +1,11 @@
-import { Entity, PrimaryGeneratedColumn, Column, OneToMany, OneToOne } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, OneToMany, OneToOne, JoinColumn } from 'typeorm';
 import { ObjectType, Field, Int } from 'type-graphql';
+import { Team } from './Team';
+import { Position } from './Position';
+import { Archetype } from './Archetype';
 import { PlayerRating } from './PlayerRating';
-import { PlayerAbility } from './PlayerAbility';
 import { PlayerStats } from './PlayerStats';
+import { PlayerAbility } from './PlayerAbility';
 import { PlayerAnalysis } from './PlayerAnalysis';
 
 @ObjectType()
@@ -12,55 +15,65 @@ export class Player {
     @PrimaryGeneratedColumn({ name: 'player_id' })
     id!: number;
 
-    @Field()
-    @Column({ name: 'first_name' })
-    firstName!: string;
+    @Field(() => String, { nullable: true })
+    @Column({ name: 'first_name', nullable: true })
+    firstName?: string;
 
-    @Field()
-    @Column({ name: 'last_name' })
-    lastName!: string;
+    @Field(() => String, { nullable: true })
+    @Column({ name: 'last_name', nullable: true })
+    lastName?: string;
 
-    @Field()
-    @Column()
-    height!: string;
+    @Field(() => String, { nullable: true })
+    @Column({ nullable: true })
+    height?: string;
 
-    @Field(() => Int)
-    @Column()
-    weight!: number;
+    @Field(() => Int, { nullable: true })
+    @Column({ nullable: true })
+    weight?: number;
 
-    @Field()
-    @Column()
-    college!: string;
+    @Field(() => String, { nullable: true })
+    @Column({ nullable: true })
+    college?: string;
 
-    @Field()
-    @Column()
-    handedness!: string;
+    @Field(() => String, { nullable: true })
+    @Column({ nullable: true })
+    handedness?: string;
 
-    @Field(() => Int)
-    @Column()
-    age!: number;
+    @Field(() => Int, { nullable: true })
+    @Column({ nullable: true })
+    age?: number;
 
-    @Field(() => Int)
-    @Column({ name: 'jersey_num' })
-    jerseyNumber!: number;
+    @Field(() => Int, { nullable: true })
+    @Column({ name: 'jersey_num', nullable: true })
+    jerseyNumber?: number;
 
-    @Field(() => Int)
-    @Column({ name: 'years_pro' })
-    yearsPro!: number;
+    @Field(() => Int, { nullable: true })
+    @Column({ name: 'years_pro', nullable: true })
+    yearsPro?: number;
 
-    @Field(() => [PlayerRating], { nullable: true })
-    @OneToMany(() => PlayerRating, (rating: PlayerRating) => rating.player)
-    ratings?: PlayerRating[];
+    // Relations
+    @Field(() => Position, { nullable: true })
+    position?: Position;
+
+    @Field(() => Team, { nullable: true })
+    team?: Team;
+
+    @Field(() => Archetype, { nullable: true })
+    archetype?: Archetype;
 
     @Field(() => [PlayerAbility], { nullable: true })
-    @OneToMany(() => PlayerAbility, (ability: PlayerAbility) => ability.player)
+    @OneToMany(() => PlayerAbility, ability => ability.player)
     abilities?: PlayerAbility[];
 
-    @Field(() => PlayerStats, { nullable: true })
-    @OneToOne(() => PlayerStats, (stats: PlayerStats) => stats.player)
-    stats?: PlayerStats;
+    @Field(() => [PlayerRating], { nullable: true })
+    @OneToMany(() => PlayerRating, rating => rating.player)
+    ratings?: PlayerRating[];
 
-    @Field(() => PlayerAnalysis, { nullable: true })
-    @OneToOne(() => PlayerAnalysis, (analysis: PlayerAnalysis) => analysis.player)
-    analysis?: PlayerAnalysis;
+    @Field(() => [PlayerStats], { nullable: true })
+    @OneToMany(() => PlayerStats, stats => stats.player)
+    stats?: PlayerStats[];
+
+    @Field(() => PlayerAnalysis)
+    @OneToOne(() => PlayerAnalysis, analysis => analysis.player)
+    analysis!: PlayerAnalysis;
 }

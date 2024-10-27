@@ -17,5 +17,9 @@
     "tslib": "^2.8.0",
     "typescript": "~5.6.2",
     "vite": "^5.4.9"
+  },
+  "dependencies": {
+    "@apollo/client": "^3.11.8",
+    "graphql": "^16.9.0"
   }
 }

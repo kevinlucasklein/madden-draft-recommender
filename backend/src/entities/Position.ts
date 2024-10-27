@@ -8,15 +8,15 @@ export class Position {
     @PrimaryGeneratedColumn({ name: 'position_id' })
     id!: number;
 
-    @Field({ nullable: true })
+    @Field()
     @Column()
     code!: string;
 
-    @Field({ nullable: true })
+    @Field()
     @Column({ name: 'short_label' })
-    shortLabel!: string;
+    name!: string;  // This will be queried as 'name'
 
-    @Field({ nullable: true })
+    @Field()
     @Column({ name: 'position_type' })
-    positionType!: string;
+    type!: string;  // This will be queried as 'type'
 }

@@ -1,8 +1,162 @@
 <script lang="ts">
     import { onMount } from 'svelte';
+    import { client } from '../apollo/client';
+    import { GET_ALL_PLAYERS } from '../lib/graphql/queries/players';
 
+    // Update interface to match GraphQL schema
+    interface PlayerData {
+        id: number;
+        firstName: string;
+        lastName: string;
+        height: string;
+        weight: number;
+        college: string;
+        handedness: string;
+        age: number;
+        jerseyNumber: number;
+        yearsPro: number;
+        position: {
+            name: string;        // Changed from name
+            type: string;  // Changed from type
+        };
+        team: {
+            label: string;
+        };
+        archetype: {
+            name: string;      // Changed from name
+        };
+        abilities: Array<{
+            name: string;  // Changed from name
+            abilityOrder: number;  // Added this
+        }>;
+        ratings: Array<{       // Changed to array
+            overall: number;  // Changed from overall
+        }>;
+        stats: Array<{
+            speed: number;
+            acceleration: number;
+            agility: number;
+            jumping: number;
+            stamina: number;
+            strength: number;
+            awareness: number;
+            bcvision: number;
+            blockShedding: number;
+            breakSack: number;
+            breakTackle: number;
+            carrying: number;
+            catchInTraffic: number;
+            catching: number;
+            changeOfDirection: number;
+            deepRouteRunning: number;
+            finesseMoves: number;
+            hitPower: number;
+            impactBlocking: number;
+            injury: number;
+            jukeMove: number;
+            kickAccuracy: number;
+            kickPower: number;
+            kickReturn: number;
+            leadBlock: number;
+            manCoverage: number;
+            mediumRouteRunning: number;
+            passBlock: number;
+            passBlockFinesse: number;
+            passBlockPower: number;
+            playAction: number;
+            playRecognition: number;
+            powerMoves: number;
+            press: number;
+            pursuit: number;
+            release: number;
+            runBlock: number;
+            runBlockFinesse: number;
+            runBlockPower: number;
+            runningStyle: string;
+            shortRouteRunning: number;
+            spectacularCatch: number;
+            spinMove: number;
+            stiffArm: number;
+            tackle: number;
+            throwAccuracyDeep: number;
+            throwAccuracyMid: number;
+            throwAccuracyShort: number;
+            throwOnTheRun: number;
+            throwPower: number;
+            throwUnderPressure: number;
+            toughness: number;
+            trucking: number;
+            zoneCoverage: number;
+        }>;
+    }
+
+    let players: PlayerData[] = [];
+    let loading = true;
+    let error: string | null = null;
     let tableContainer: HTMLElement;
     let scrollbarContainer: HTMLElement;
+
+    // Update sorting state to handle nested properties
+    let sortColumn: string = 'ratings.overall';
+    let sortDirection: 'asc' | 'desc' = 'desc';
+
+    function sortPlayers(column: string) {
+        if (sortColumn === column) {
+            sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
+        } else {
+            sortColumn = column;
+            sortDirection = 'desc';  // Default to descending for new sorts
+        }
+
+        players = [...players].sort((a, b) => {
+            let aVal, bVal;
+
+            // Handle special case for overall rating
+            if (column === 'ratings.overall') {
+                aVal = a.ratings?.[0]?.overall ?? 0;
+                bVal = b.ratings?.[0]?.overall ?? 0;
+            } else if (column.startsWith('stats.')) {
+                // Handle stats properties
+                const statProperty = column.split('.')[1] as keyof PlayerData['stats'][0];
+                aVal = a.stats?.[0]?.[statProperty] ?? 0;
+                bVal = b.stats?.[0]?.[statProperty] ?? 0;
+            } else {
+                // Handle regular properties
+                aVal = a[column as keyof PlayerData];
+                bVal = b[column as keyof PlayerData];
+            }
+
+            if (aVal === null || aVal === undefined) return 1;
+            if (bVal === null || bVal === undefined) return -1;
+
+            if (typeof aVal === 'number' && typeof bVal === 'number') {
+                return sortDirection === 'desc' ? aVal - bVal : bVal - aVal;
+            }
+
+            const aStr = String(aVal).toLowerCase();
+            const bStr = String(bVal).toLowerCase();
+            return sortDirection === 'desc' 
+                ? aStr.localeCompare(bStr)
+                : bStr.localeCompare(aStr);
+        });
+    }
+
+    // In your onMount, initialize with overall sort
+    onMount(async () => {
+        try {
+            const { data } = await client.query({
+                query: GET_ALL_PLAYERS
+            });
+            players = [...data.players];
+            sortColumn = 'ratings.overall';
+            sortDirection = 'desc';  // Highest to lowest
+            sortPlayers('ratings.overall');
+        } catch (e) {
+            error = e instanceof Error ? e.message : 'An error occurred';
+        } finally {
+            loading = false;
+        }
+    });
 
     onMount(() => {
         const tableWrapper = document.querySelector('.table-wrapper') as HTMLElement;
@@ -44,143 +198,7 @@
             document.documentElement.style.setProperty('--second-col-width', `${(firstCol as HTMLElement).offsetWidth + (secondCol as HTMLElement).offsetWidth}px`);
         }
     });
-  
-    interface PlayerData {
-        // Player base info
-        overall_rating: number;
-        first_name: string;
-        last_name: string;
-        height: string;
-        weight: number;
-        college: string;
-        handedness: string;
-        age: number;
-        jersey_num: number;
-        years_pro: number;
 
-        // Abilities and labels
-        ability1: string;
-        ability2: string;
-        ability3: string;
-        ability4: string;
-        ability5: string;
-        ability6: string;
-        archetype_label: string;
-        team_label: string;
-        position: string;
-        position_type: string;
-
-        // Player stats
-        acceleration: number;
-        agility: number;
-        jumping: number;
-        stamina: number;
-        strength: number;
-        awareness: number;
-        bcvision: number;
-        block_shedding: number;
-        break_sack: number;
-        break_tackle: number;
-        carrying: number;
-        catch_in_traffic: number;
-        catching: number;
-        change_of_direction: number;
-        deep_route_running: number;
-        finesse_moves: number;
-        hit_power: number;
-        impact_blocking: number;
-        injury: number;
-        juke_move: number;
-        kick_accuracy: number;
-        kick_power: number;
-        kick_return: number;
-        lead_block: number;
-        man_coverage: number;
-        medium_route_running: number;
-        pass_block: number;
-        pass_block_finesse: number;
-        pass_block_power: number;
-        play_action: number;
-        play_recognition: number;
-        power_moves: number;
-        press: number;
-        pursuit: number;
-        release: number;
-        run_block: number;
-        run_block_finesse: number;
-        run_block_power: number;
-        running_style: string;
-        short_route_running: number;
-        spectacular_catch: number;
-        speed: number;
-        spin_move: number;
-        stiff_arm: number;
-        tackle: number;
-        throw_accuracy_deep: number;
-        throw_accuracy_mid: number;
-        throw_accuracy_short: number;
-        throw_on_the_run: number;
-        throw_power: number;
-        throw_under_pressure: number;
-        toughness: number;
-        trucking: number;
-        zone_coverage: number;
-    }
-  
-    let players: PlayerData[] = [];
-    let loading = true;
-    let error: string | null = null;
-
-    // Add sorting state
-    let sortColumn: keyof PlayerData | null = 'overall_rating';
-    let sortDirection: 'asc' | 'desc' = 'desc';
-
-     // Sorting function
-     function sortPlayers(column: keyof PlayerData) {
-        if (sortColumn === column) {
-            // If clicking the same column, reverse the sort direction
-            sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
-        } else {
-            // New column, set it as sort column and default to descending
-            sortColumn = column;
-            sortDirection = 'desc';
-        }
-
-        players = players.sort((a, b) => {
-            const aVal = a[column];
-            const bVal = b[column];
-
-            // Handle null/undefined values
-            if (aVal === null || aVal === undefined) return 1;
-            if (bVal === null || bVal === undefined) return -1;
-
-            // Sort based on type
-            if (typeof aVal === 'number' && typeof bVal === 'number') {
-                return sortDirection === 'asc' ? aVal - bVal : bVal - aVal;
-            }
-
-            // String comparison
-            const aStr = String(aVal).toLowerCase();
-            const bStr = String(bVal).toLowerCase();
-            return sortDirection === 'asc' 
-                ? aStr.localeCompare(bStr)
-                : bStr.localeCompare(aStr);
-        });
-    }
-  
-    onMount(async () => {
-        try {
-            const response = await fetch('http://localhost:3000/api/players/full');
-            if (!response.ok) throw new Error('Failed to fetch data');
-            players = await response.json();
-            // Initial sort
-            sortPlayers('overall_rating');
-        } catch (e) {
-            error = e instanceof Error ? e.message : 'An error occurred';
-        } finally {
-            loading = false;
-        }
-    });
 </script>
   
 <div class="table-wrapper">
@@ -191,352 +209,468 @@
             <p class="error">Error: {error}</p>
         {:else}
             <table>
-            <thead>
-                <tr>
-                    <!-- Base Info -->
-                    <th on:click={() => sortPlayers('overall_rating')} class:sorted={sortColumn === 'overall_rating'} class:asc={sortDirection === 'asc'}>
-                        Overall {sortColumn === 'overall_rating' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
-                    </th>
-                    <th on:click={() => sortPlayers('first_name')} class:sorted={sortColumn === 'first_name'} class:asc={sortDirection === 'asc'}>
-                        First Name {sortColumn === 'first_name' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
-                    </th>
-                    <th on:click={() => sortPlayers('last_name')} class:sorted={sortColumn === 'last_name'} class:asc={sortDirection === 'asc'}>
-                        Last Name {sortColumn === 'last_name' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
-                    </th>
-                    <th on:click={() => sortPlayers('height')} class:sorted={sortColumn === 'height'} class:asc={sortDirection === 'asc'}>
-                        Height {sortColumn === 'height' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
-                    </th>
-                    <th on:click={() => sortPlayers('weight')} class:sorted={sortColumn === 'weight'} class:asc={sortDirection === 'asc'}>
-                        Weight {sortColumn === 'weight' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
-                    </th>
-                    <th on:click={() => sortPlayers('college')} class:sorted={sortColumn === 'college'} class:asc={sortDirection === 'asc'}>
-                        College {sortColumn === 'college' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
-                    </th>
-                    <th on:click={() => sortPlayers('handedness')} class:sorted={sortColumn === 'handedness'} class:asc={sortDirection === 'asc'}>
-                        Handedness {sortColumn === 'handedness' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
-                    </th>
-                    <th on:click={() => sortPlayers('age')} class:sorted={sortColumn === 'age'} class:asc={sortDirection === 'asc'}>
-                        Age {sortColumn === 'age' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
-                    </th>
-                    <th on:click={() => sortPlayers('jersey_num')} class:sorted={sortColumn === 'jersey_num'} class:asc={sortDirection === 'asc'}>
-                        Jersey # {sortColumn === 'jersey_num' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
-                    </th>
-                    <th on:click={() => sortPlayers('years_pro')} class:sorted={sortColumn === 'years_pro'} class:asc={sortDirection === 'asc'}>
-                        Years Pro {sortColumn === 'years_pro' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
-                    </th>
-                    
-                    <!-- Position and Team Info -->
-                    <th on:click={() => sortPlayers('position')} class:sorted={sortColumn === 'position'} class:asc={sortDirection === 'asc'}>
-                        Position {sortColumn === 'position' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
-                    </th>
-                    <th on:click={() => sortPlayers('position_type')} class:sorted={sortColumn === 'position_type'} class:asc={sortDirection === 'asc'}>
-                        Position Type {sortColumn === 'position_type' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
-                    </th>
-                    <th on:click={() => sortPlayers('team_label')} class:sorted={sortColumn === 'team_label'} class:asc={sortDirection === 'asc'}>
-                        Team {sortColumn === 'team_label' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
-                    </th>
-                    <th on:click={() => sortPlayers('archetype_label')} class:sorted={sortColumn === 'archetype_label'} class:asc={sortDirection === 'asc'}>
-                        Archetype {sortColumn === 'archetype_label' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
-                    </th>
-                    
-                    <!-- Abilities -->
-                    <th on:click={() => sortPlayers('ability1')} class:sorted={sortColumn === 'ability1'} class:asc={sortDirection === 'asc'}>
-                        Ability 1 {sortColumn === 'ability1' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
-                    </th>
-                    <th on:click={() => sortPlayers('ability2')} class:sorted={sortColumn === 'ability2'} class:asc={sortDirection === 'asc'}>
-                        Ability 2 {sortColumn === 'ability2' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
-                    </th>
-                    <th on:click={() => sortPlayers('ability3')} class:sorted={sortColumn === 'ability3'} class:asc={sortDirection === 'asc'}>
-                        Ability 3 {sortColumn === 'ability3' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
-                    </th>
-                    <th on:click={() => sortPlayers('ability4')} class:sorted={sortColumn === 'ability4'} class:asc={sortDirection === 'asc'}>
-                        Ability 4 {sortColumn === 'ability4' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
-                    </th>
-                    <th on:click={() => sortPlayers('ability5')} class:sorted={sortColumn === 'ability5'} class:asc={sortDirection === 'asc'}>
-                        Ability 5 {sortColumn === 'ability5' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
-                    </th>
-                    <th on:click={() => sortPlayers('ability6')} class:sorted={sortColumn === 'ability6'} class:asc={sortDirection === 'asc'}>
-                        Ability 6 {sortColumn === 'ability6' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
-                    </th>
+                <thead>
+                    <tr>
+                        <!-- Base Info -->
+                        <th on:click={() => sortPlayers('ratings.overall')} 
+                            class:sorted={sortColumn === 'ratings.overall'} 
+                            class:asc={sortDirection === 'desc'}>
+                            Overall {sortColumn === 'ratings.overall' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        </th>
+                        <th on:click={() => sortPlayers('firstName')} 
+                            class:sorted={sortColumn === 'firstName'} 
+                            class:asc={sortDirection === 'asc'}>
+                            First Name {sortColumn === 'firstName' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        </th>
+                        <th on:click={() => sortPlayers('lastName')} 
+                            class:sorted={sortColumn === 'lastName'} 
+                            class:asc={sortDirection === 'asc'}>
+                            Last Name {sortColumn === 'lastName' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        </th>
+                        <th on:click={() => sortPlayers('height')} 
+                            class:sorted={sortColumn === 'height'} 
+                            class:asc={sortDirection === 'asc'}>
+                            Height {sortColumn === 'height' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        </th>
+                        <th on:click={() => sortPlayers('weight')} 
+                            class:sorted={sortColumn === 'weight'} 
+                            class:asc={sortDirection === 'asc'}>
+                            Weight {sortColumn === 'weight' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        </th>
+                        <th on:click={() => sortPlayers('college')} 
+                            class:sorted={sortColumn === 'college'} 
+                            class:asc={sortDirection === 'asc'}>
+                            College {sortColumn === 'college' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        </th>
+                        <th on:click={() => sortPlayers('handedness')} 
+                            class:sorted={sortColumn === 'handedness'} 
+                            class:asc={sortDirection === 'asc'}>
+                            Handedness {sortColumn === 'handedness' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        </th>
+                        <th on:click={() => sortPlayers('age')} 
+                            class:sorted={sortColumn === 'age'} 
+                            class:asc={sortDirection === 'asc'}>
+                            Age {sortColumn === 'age' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        </th>
+                        <th on:click={() => sortPlayers('jerseyNumber')} 
+                            class:sorted={sortColumn === 'jerseyNumber'} 
+                            class:asc={sortDirection === 'asc'}>
+                            Jersey # {sortColumn === 'jerseyNumber' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        </th>
+                        <th on:click={() => sortPlayers('yearsPro')} 
+                            class:sorted={sortColumn === 'yearsPro'} 
+                            class:asc={sortDirection === 'asc'}>
+                            Years Pro {sortColumn === 'yearsPro' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        </th>
+                        <th on:click={() => sortPlayers('position')} 
+                            class:sorted={sortColumn === 'position'} 
+                            class:asc={sortDirection === 'asc'}>
+                            Position {sortColumn === 'position' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        </th>
+                        <th on:click={() => sortPlayers('positionType')} 
+                            class:sorted={sortColumn === 'positionType'} 
+                            class:asc={sortDirection === 'asc'}>
+                            Position Type {sortColumn === 'positionType' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        </th>
+                        <th on:click={() => sortPlayers('teamLabel')} 
+                            class:sorted={sortColumn === 'teamLabel'} 
+                            class:asc={sortDirection === 'asc'}>
+                            Team {sortColumn === 'teamLabel' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        </th>
+                        <th on:click={() => sortPlayers('archetypeLabel')} 
+                            class:sorted={sortColumn === 'archetypeLabel'} 
+                            class:asc={sortDirection === 'asc'}>
+                            Archetype {sortColumn === 'archetypeLabel' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        </th>
+                        <th on:click={() => sortPlayers('ability1')} 
+                            class:sorted={sortColumn === 'ability1'} 
+                            class:asc={sortDirection === 'asc'}>
+                            Ability 1 {sortColumn === 'ability1' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        </th>
+                        <th on:click={() => sortPlayers('ability2')} 
+                            class:sorted={sortColumn === 'ability2'} 
+                            class:asc={sortDirection === 'asc'}>
+                            Ability 2 {sortColumn === 'ability2' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        </th>
+                        <th on:click={() => sortPlayers('ability3')} 
+                            class:sorted={sortColumn === 'ability3'} 
+                            class:asc={sortDirection === 'asc'}>
+                            Ability 3 {sortColumn === 'ability3' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        </th>
+                        <th on:click={() => sortPlayers('ability4')} 
+                            class:sorted={sortColumn === 'ability4'} 
+                            class:asc={sortDirection === 'asc'}>
+                            Ability 4 {sortColumn === 'ability4' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        </th>
+                        <th on:click={() => sortPlayers('ability5')} 
+                            class:sorted={sortColumn === 'ability5'} 
+                            class:asc={sortDirection === 'asc'}>
+                            Ability 5 {sortColumn === 'ability5' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        </th>
+                        <th on:click={() => sortPlayers('ability6')} 
+                            class:sorted={sortColumn === 'ability6'} 
+                            class:asc={sortDirection === 'asc'}>
+                            Ability 6 {sortColumn === 'ability6' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        </th>
+                        <th on:click={() => sortPlayers('speed')}
+                            class:sorted={sortColumn === 'speed'} 
+                            class:asc={sortDirection === 'asc'}>
+                            Speed {sortColumn === 'speed' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        </th>
+                        <th on:click={() => sortPlayers('acceleration')}
+                            class:sorted={sortColumn === 'acceleration'} 
+                            class:asc={sortDirection === 'asc'}>
+                            Acceleration {sortColumn === 'acceleration' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        </th>
+                        <th on:click={() => sortPlayers('agility')}
+                            class:sorted={sortColumn === 'agility'} 
+                            class:asc={sortDirection === 'asc'}>
+                            Agility {sortColumn === 'agility' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        </th>
+                        <th on:click={() => sortPlayers('jumping')}
+                            class:sorted={sortColumn === 'jumping'} 
+                            class:asc={sortDirection === 'asc'}>
+                            Jumping {sortColumn === 'jumping' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        </th>
+                        <th on:click={() => sortPlayers('stamina')}
+                            class:sorted={sortColumn === 'stamina'} 
+                            class:asc={sortDirection === 'asc'}>
+                            Stamina {sortColumn === 'stamina' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        </th>
+                        <th on:click={() => sortPlayers('strength')}
+                            class:sorted={sortColumn === 'strength'} 
+                            class:asc={sortDirection === 'asc'}>
+                            Strength {sortColumn === 'strength' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        </th>
+                        <th on:click={() => sortPlayers('changeOfDirection')}
+                            class:sorted={sortColumn === 'changeOfDirection'} 
+                            class:asc={sortDirection === 'asc'}>
+                            Change of Direction {sortColumn === 'changeOfDirection' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        </th>
+                        <th on:click={() => sortPlayers('awareness')}
+                            class:sorted={sortColumn === 'awareness'} 
+                            class:asc={sortDirection === 'asc'}>
+                            Awareness {sortColumn === 'awareness' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        </th>
+                        <th on:click={() => sortPlayers('playRecognition')}
+                            class:sorted={sortColumn === 'playRecognition'} 
+                            class:asc={sortDirection === 'asc'}>
+                            Play Recognition {sortColumn === 'playRecognition' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        </th>
+                        <th on:click={() => sortPlayers('toughness')}
+                            class:sorted={sortColumn === 'toughness'} 
+                            class:asc={sortDirection === 'asc'}>
+                            Toughness {sortColumn === 'toughness' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        </th>
+                        <th on:click={() => sortPlayers('bcvision')}
+                            class:sorted={sortColumn === 'bcvision'} 
+                            class:asc={sortDirection === 'asc'}>
+                            BC Vision {sortColumn === 'bcvision' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        </th>
+                        <th on:click={() => sortPlayers('carrying')}
+                            class:sorted={sortColumn === 'carrying'} 
+                            class:asc={sortDirection === 'asc'}>
+                            Carrying {sortColumn === 'carrying' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        </th>
+                        <th on:click={() => sortPlayers('breakTackle')}
+                            class:sorted={sortColumn === 'breakTackle'} 
+                            class:asc={sortDirection === 'asc'}>
+                            Break Tackle {sortColumn === 'breakTackle' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        </th>
+                        <th on:click={() => sortPlayers('breakSack')}
+                            class:sorted={sortColumn === 'breakSack'} 
+                            class:asc={sortDirection === 'asc'}>
+                            Break Sack {sortColumn === 'breakSack' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        </th>
+                        <th on:click={() => sortPlayers('trucking')}
+                            class:sorted={sortColumn === 'trucking'} 
+                            class:asc={sortDirection === 'asc'}>
+                            Trucking {sortColumn === 'trucking' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        </th>
+                        <th on:click={() => sortPlayers('stiffArm')}
+                            class:sorted={sortColumn === 'stiffArm'} 
+                            class:asc={sortDirection === 'asc'}>
+                            Stiff Arm {sortColumn === 'stiffArm' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        </th>
+                        <th on:click={() => sortPlayers('spinMove')}
+                            class:sorted={sortColumn === 'spinMove'} 
+                            class:asc={sortDirection === 'asc'}>
+                            Spin Move {sortColumn === 'spinMove' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        </th>
+                        <th on:click={() => sortPlayers('jukeMove')}
+                            class:sorted={sortColumn === 'jukeMove'} 
+                            class:asc={sortDirection === 'asc'}>
+                            Juke Move {sortColumn === 'jukeMove' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        </th>
+                        <th on:click={() => sortPlayers('catching')}
+                            class:sorted={sortColumn === 'catching'} 
+                            class:asc={sortDirection === 'asc'}>
+                            Catching {sortColumn === 'catching' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        </th>
+                        <th on:click={() => sortPlayers('catchInTraffic')}
+                            class:sorted={sortColumn === 'catchInTraffic'} 
+                            class:asc={sortDirection === 'asc'}>
+                            Catch In Traffic {sortColumn === 'catchInTraffic' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        </th>
+                        <th on:click={() => sortPlayers('spectacularCatch')}
+                            class:sorted={sortColumn === 'spectacularCatch'} 
+                            class:asc={sortDirection === 'asc'}>
+                            Spectacular Catch {sortColumn === 'spectacularCatch' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        </th>
+                        <th on:click={() => sortPlayers('shortRouteRunning')}
+                            class:sorted={sortColumn === 'shortRouteRunning'} 
+                            class:asc={sortDirection === 'asc'}>
+                            Short Route Running {sortColumn === 'shortRouteRunning' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        </th>
+                        <th on:click={() => sortPlayers('mediumRouteRunning')}
+                            class:sorted={sortColumn === 'mediumRouteRunning'} 
+                            class:asc={sortDirection === 'asc'}>
+                            Medium Route Running {sortColumn === 'mediumRouteRunning' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        </th>
+                        <th on:click={() => sortPlayers('deepRouteRunning')}
+                            class:sorted={sortColumn === 'deepRouteRunning'} 
+                            class:asc={sortDirection === 'asc'}>
+                            Deep Route Running {sortColumn === 'deepRouteRunning' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        </th>
+                        <th on:click={() => sortPlayers('release')}
+                            class:sorted={sortColumn === 'release'} 
+                            class:asc={sortDirection === 'asc'}>
+                            Release {sortColumn === 'release' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        </th>
+                        <th on:click={() => sortPlayers('throwPower')}
+                            class:sorted={sortColumn === 'throwPower'} 
+                            class:asc={sortDirection === 'asc'}>
+                            Throw Power {sortColumn === 'throwPower' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        </th>
+                        <th on:click={() => sortPlayers('throwAccuracyShort')}
+                            class:sorted={sortColumn === 'throwAccuracyShort'} 
+                            class:asc={sortDirection === 'asc'}>
+                            Throw Accuracy Short {sortColumn === 'throwAccuracyShort' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        </th>
+                        <th on:click={() => sortPlayers('throwAccuracyMid')}
+                            class:sorted={sortColumn === 'throwAccuracyMid'} 
+                            class:asc={sortDirection === 'asc'}>
+                            Throw Accuracy Mid {sortColumn === 'throwAccuracyMid' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        </th>
+                        <th on:click={() => sortPlayers('throwAccuracyDeep')}
+                            class:sorted={sortColumn === 'throwAccuracyDeep'} 
+                            class:asc={sortDirection === 'asc'}>
+                            Throw Accuracy Deep {sortColumn === 'throwAccuracyDeep' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        </th>
+                        <th on:click={() => sortPlayers('throwOnTheRun')}
+                            class:sorted={sortColumn === 'throwOnTheRun'} 
+                            class:asc={sortDirection === 'asc'}>
+                            Throw On The Run {sortColumn === 'throwOnTheRun' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        </th>
+                        <th on:click={() => sortPlayers('throwUnderPressure')}
+                            class:sorted={sortColumn === 'throwUnderPressure'} 
+                            class:asc={sortDirection === 'asc'}>
+                            Throw Under Pressure {sortColumn === 'throwUnderPressure' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        </th>
+                        <th on:click={() => sortPlayers('playAction')}
+                            class:sorted={sortColumn === 'playAction'} 
+                            class:asc={sortDirection === 'asc'}>
+                            Play Action {sortColumn === 'playAction' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        </th>
+                        <th on:click={() => sortPlayers('passBlock')}
+                            class:sorted={sortColumn === 'passBlock'} 
+                            class:asc={sortDirection === 'asc'}>
+                            Pass Block {sortColumn === 'passBlock' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        </th>
+                        <th on:click={() => sortPlayers('passBlockPower')}
+                            class:sorted={sortColumn === 'passBlockPower'} 
+                            class:asc={sortDirection === 'asc'}>
+                            Pass Block Power {sortColumn === 'passBlockPower' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        </th>
+                        <th on:click={() => sortPlayers('passBlockFinesse')}
+                            class:sorted={sortColumn === 'passBlockFinesse'} 
+                            class:asc={sortDirection === 'asc'}>
+                            Pass Block Finesse {sortColumn === 'passBlockFinesse' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        </th>
+                        <th on:click={() => sortPlayers('runBlock')}
+                            class:sorted={sortColumn === 'runBlock'} 
+                            class:asc={sortDirection === 'asc'}>
+                            Run Block {sortColumn === 'runBlock' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        </th>
+                        <th on:click={() => sortPlayers('runBlockPower')}
+                            class:sorted={sortColumn === 'runBlockPower'} 
+                            class:asc={sortDirection === 'asc'}>
+                            Run Block Power {sortColumn === 'runBlockPower' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        </th>
+                        <th on:click={() => sortPlayers('runBlockFinesse')}
+                            class:sorted={sortColumn === 'runBlockFinesse'} 
+                            class:asc={sortDirection === 'asc'}>
+                            Run Block Finesse {sortColumn === 'runBlockFinesse' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        </th>   
+                        <th on:click={() => sortPlayers('impactBlocking')}
+                            class:sorted={sortColumn === 'impactBlocking'} 
+                            class:asc={sortDirection === 'asc'}>
+                            Impact Blocking {sortColumn === 'impactBlocking' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        </th>
+                        <th on:click={() => sortPlayers('leadBlock')}
+                            class:sorted={sortColumn === 'leadBlock'} 
+                            class:asc={sortDirection === 'asc'}>
+                            Lead Block {sortColumn === 'leadBlock' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        </th>
+                        <th on:click={() => sortPlayers('tackle')}
+                            class:sorted={sortColumn === 'tackle'} 
+                            class:asc={sortDirection === 'asc'}>
+                            Tackle {sortColumn === 'tackle' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        </th>
+                        <th on:click={() => sortPlayers('hitPower')}
+                            class:sorted={sortColumn === 'hitPower'} 
+                            class:asc={sortDirection === 'asc'}>
+                            Hit Power {sortColumn === 'hitPower' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        </th>
+                        <th on:click={() => sortPlayers('powerMoves')}
+                            class:sorted={sortColumn === 'powerMoves'} 
+                            class:asc={sortDirection === 'asc'}>
+                            Power Moves {sortColumn === 'powerMoves' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        </th>
+                        <th on:click={() => sortPlayers('finesseMoves')}
+                            class:sorted={sortColumn === 'finesseMoves'} 
+                            class:asc={sortDirection === 'asc'}>
+                            Finesse Moves {sortColumn === 'finesseMoves' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        </th>
+                        <th on:click={() => sortPlayers('blockShedding')}
+                            class:sorted={sortColumn === 'blockShedding'} 
+                            class:asc={sortDirection === 'asc'}>
+                            Block Shedding {sortColumn === 'blockShedding' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        </th>
+                        <th on:click={() => sortPlayers('pursuit')}
+                            class:sorted={sortColumn === 'pursuit'} 
+                            class:asc={sortDirection === 'asc'}>
+                            Pursuit {sortColumn === 'pursuit' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        </th>
+                        <th on:click={() => sortPlayers('manCoverage')}
+                            class:sorted={sortColumn === 'manCoverage'} 
+                            class:asc={sortDirection === 'asc'}>
+                            Man Coverage {sortColumn === 'manCoverage' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        </th>
+                        <th on:click={() => sortPlayers('zoneCoverage')}
+                            class:sorted={sortColumn === 'zoneCoverage'} 
+                            class:asc={sortDirection === 'asc'}>
+                            Zone Coverage {sortColumn === 'zoneCoverage' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        </th>
+                        <th on:click={() => sortPlayers('press')}
+                            class:sorted={sortColumn === 'press'} 
+                            class:asc={sortDirection === 'asc'}>
+                            Press {sortColumn === 'press' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        </th>
+                        <th on:click={() => sortPlayers('kickPower')}
+                            class:sorted={sortColumn === 'kickPower'} 
+                            class:asc={sortDirection === 'asc'}>
+                            Kick Power {sortColumn === 'kickPower' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        </th>
+                        <th on:click={() => sortPlayers('kickAccuracy')}
+                            class:sorted={sortColumn === 'kickAccuracy'} 
+                            class:asc={sortDirection === 'asc'}>
+                            Kick Accuracy {sortColumn === 'kickAccuracy' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        </th>
+                        <th on:click={() => sortPlayers('kickReturn')}
+                            class:sorted={sortColumn === 'kickReturn'} 
+                            class:asc={sortDirection === 'asc'}>
+                            Kick Return {sortColumn === 'kickReturn' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        </th>
+                        <th on:click={() => sortPlayers('injury')}
+                            class:sorted={sortColumn === 'injury'} 
+                            class:asc={sortDirection === 'asc'}>
+                            Injury {sortColumn === 'injury' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        </th>
+                        <th on:click={() => sortPlayers('runningStyle')}
+                            class:sorted={sortColumn === 'runningStyle'} 
+                            class:asc={sortDirection === 'asc'}>
+                            Running Style {sortColumn === 'runningStyle' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        </th>
+                    </tr>
+                </thead>
 
-                    <!-- Physical Attributes -->
-                    <th on:click={() => sortPlayers('speed')} class:sorted={sortColumn === 'speed'} class:asc={sortDirection === 'asc'}>
-                        Speed {sortColumn === 'speed' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
-                    </th>
-                    <th on:click={() => sortPlayers('acceleration')} class:sorted={sortColumn === 'acceleration'} class:asc={sortDirection === 'asc'}>
-                        Acceleration {sortColumn === 'acceleration' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
-                    </th>
-                    <th on:click={() => sortPlayers('agility')} class:sorted={sortColumn === 'agility'} class:asc={sortDirection === 'asc'}>
-                        Agility {sortColumn === 'agility' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
-                    </th>
-                    <th on:click={() => sortPlayers('jumping')} class:sorted={sortColumn === 'jumping'} class:asc={sortDirection === 'asc'}>
-                        Jumping {sortColumn === 'jumping' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
-                    </th>
-                    <th on:click={() => sortPlayers('stamina')} class:sorted={sortColumn === 'stamina'} class:asc={sortDirection === 'asc'}>
-                        Stamina {sortColumn === 'stamina' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
-                    </th>
-                    <th on:click={() => sortPlayers('strength')} class:sorted={sortColumn === 'strength'} class:asc={sortDirection === 'asc'}>
-                        Strength {sortColumn === 'strength' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
-                    </th>
-                    <th on:click={() => sortPlayers('change_of_direction')} class:sorted={sortColumn === 'change_of_direction'} class:asc={sortDirection === 'asc'}>
-                        Change of Direction {sortColumn === 'change_of_direction' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
-                    </th>
-
-                    <!-- Mental Attributes -->
-                    <!-- Mental Attributes -->
-                    <th on:click={() => sortPlayers('awareness')} class:sorted={sortColumn === 'awareness'} class:asc={sortDirection === 'asc'}>
-                        Awareness {sortColumn === 'awareness' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
-                    </th>
-                    <th on:click={() => sortPlayers('play_recognition')} class:sorted={sortColumn === 'play_recognition'} class:asc={sortDirection === 'asc'}>
-                        Play Recognition {sortColumn === 'play_recognition' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
-                    </th>
-                    <th on:click={() => sortPlayers('toughness')} class:sorted={sortColumn === 'toughness'} class:asc={sortDirection === 'asc'}>
-                        Toughness {sortColumn === 'toughness' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
-                    </th>
-
-                    <!-- Offensive Skills -->
-                    <th on:click={() => sortPlayers('bcvision')} class:sorted={sortColumn === 'bcvision'} class:asc={sortDirection === 'asc'}>
-                        BC Vision {sortColumn === 'bcvision' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
-                    </th>
-                    <th on:click={() => sortPlayers('carrying')} class:sorted={sortColumn === 'carrying'} class:asc={sortDirection === 'asc'}>
-                        Carrying {sortColumn === 'carrying' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
-                    </th>
-                    <th on:click={() => sortPlayers('break_tackle')} class:sorted={sortColumn === 'break_tackle'} class:asc={sortDirection === 'asc'}>
-                        Break Tackle {sortColumn === 'break_tackle' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
-                    </th>
-                    <th on:click={() => sortPlayers('break_sack')} class:sorted={sortColumn === 'break_sack'} class:asc={sortDirection === 'asc'}>
-                        Break Sack {sortColumn === 'break_sack' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
-                    </th>
-                    <th on:click={() => sortPlayers('trucking')} class:sorted={sortColumn === 'trucking'} class:asc={sortDirection === 'asc'}>
-                        Trucking {sortColumn === 'trucking' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
-                    </th>
-                    <th on:click={() => sortPlayers('stiff_arm')} class:sorted={sortColumn === 'stiff_arm'} class:asc={sortDirection === 'asc'}>
-                        Stiff Arm {sortColumn === 'stiff_arm' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
-                    </th>
-                    <th on:click={() => sortPlayers('spin_move')} class:sorted={sortColumn === 'spin_move'} class:asc={sortDirection === 'asc'}>
-                        Spin Move {sortColumn === 'spin_move' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
-                    </th>
-                    <th on:click={() => sortPlayers('juke_move')} class:sorted={sortColumn === 'juke_move'} class:asc={sortDirection === 'asc'}>
-                        Juke Move {sortColumn === 'juke_move' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
-                    </th>
-                    <th on:click={() => sortPlayers('catching')} class:sorted={sortColumn === 'catching'} class:asc={sortDirection === 'asc'}>
-                        Catching {sortColumn === 'catching' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
-                    </th>
-                    <th on:click={() => sortPlayers('catch_in_traffic')} class:sorted={sortColumn === 'catch_in_traffic'} class:asc={sortDirection === 'asc'}>
-                        Catch In Traffic {sortColumn === 'catch_in_traffic' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
-                    </th>
-                    <th on:click={() => sortPlayers('spectacular_catch')} class:sorted={sortColumn === 'spectacular_catch'} class:asc={sortDirection === 'asc'}>
-                        Spectacular Catch {sortColumn === 'spectacular_catch' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
-                    </th>
-                    <th on:click={() => sortPlayers('short_route_running')} class:sorted={sortColumn === 'short_route_running'} class:asc={sortDirection === 'asc'}>
-                        Short Route Running {sortColumn === 'short_route_running' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
-                    </th>
-                    <th on:click={() => sortPlayers('medium_route_running')} class:sorted={sortColumn === 'medium_route_running'} class:asc={sortDirection === 'asc'}>
-                        Medium Route Running {sortColumn === 'medium_route_running' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
-                    </th>
-                    <th on:click={() => sortPlayers('deep_route_running')} class:sorted={sortColumn === 'deep_route_running'} class:asc={sortDirection === 'asc'}>
-                        Deep Route Running {sortColumn === 'deep_route_running' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
-                    </th>
-                    <th on:click={() => sortPlayers('release')} class:sorted={sortColumn === 'release'} class:asc={sortDirection === 'asc'}>
-                        Release {sortColumn === 'release' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
-                    </th>
-
-                    <!-- Passing Skills -->
-                    <th on:click={() => sortPlayers('throw_power')} class:sorted={sortColumn === 'throw_power'} class:asc={sortDirection === 'asc'}>
-                        Throw Power {sortColumn === 'throw_power' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
-                    </th>
-                    <th on:click={() => sortPlayers('throw_accuracy_short')} class:sorted={sortColumn === 'throw_accuracy_short'} class:asc={sortDirection === 'asc'}>
-                        Throw Accuracy Short {sortColumn === 'throw_accuracy_short' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
-                    </th>
-                    <th on:click={() => sortPlayers('throw_accuracy_mid')} class:sorted={sortColumn === 'throw_accuracy_mid'} class:asc={sortDirection === 'asc'}>
-                        Throw Accuracy Mid {sortColumn === 'throw_accuracy_mid' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
-                    </th>
-                    <th on:click={() => sortPlayers('throw_accuracy_deep')} class:sorted={sortColumn === 'throw_accuracy_deep'} class:asc={sortDirection === 'asc'}>
-                        Throw Accuracy Deep {sortColumn === 'throw_accuracy_deep' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
-                    </th>
-                    <th on:click={() => sortPlayers('throw_on_the_run')} class:sorted={sortColumn === 'throw_on_the_run'} class:asc={sortDirection === 'asc'}>
-                        Throw On The Run {sortColumn === 'throw_on_the_run' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
-                    </th>
-                    <th on:click={() => sortPlayers('throw_under_pressure')} class:sorted={sortColumn === 'throw_under_pressure'} class:asc={sortDirection === 'asc'}>
-                        Throw Under Pressure {sortColumn === 'throw_under_pressure' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
-                    </th>
-                    <th on:click={() => sortPlayers('play_action')} class:sorted={sortColumn === 'play_action'} class:asc={sortDirection === 'asc'}>
-                        Play Action {sortColumn === 'play_action' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
-                    </th>
-
-                    <!-- Blocking Skills -->
-                    <th on:click={() => sortPlayers('pass_block')} class:sorted={sortColumn === 'pass_block'} class:asc={sortDirection === 'asc'}>
-                        Pass Block {sortColumn === 'pass_block' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
-                    </th>
-                    <th on:click={() => sortPlayers('pass_block_power')} class:sorted={sortColumn === 'pass_block_power'} class:asc={sortDirection === 'asc'}>
-                        Pass Block Power {sortColumn === 'pass_block_power' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
-                    </th>
-                    <th on:click={() => sortPlayers('pass_block_finesse')} class:sorted={sortColumn === 'pass_block_finesse'} class:asc={sortDirection === 'asc'}>
-                        Pass Block Finesse {sortColumn === 'pass_block_finesse' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
-                    </th>
-                    <th on:click={() => sortPlayers('run_block')} class:sorted={sortColumn === 'run_block'} class:asc={sortDirection === 'asc'}>
-                        Run Block {sortColumn === 'run_block' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
-                    </th>
-                    <th on:click={() => sortPlayers('run_block_power')} class:sorted={sortColumn === 'run_block_power'} class:asc={sortDirection === 'asc'}>
-                        Run Block Power {sortColumn === 'run_block_power' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
-                    </th>
-                    <th on:click={() => sortPlayers('run_block_finesse')} class:sorted={sortColumn === 'run_block_finesse'} class:asc={sortDirection === 'asc'}>
-                        Run Block Finesse {sortColumn === 'run_block_finesse' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
-                    </th>
-                    <th on:click={() => sortPlayers('impact_blocking')} class:sorted={sortColumn === 'impact_blocking'} class:asc={sortDirection === 'asc'}>
-                        Impact Blocking {sortColumn === 'impact_blocking' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
-                    </th>
-                    <th on:click={() => sortPlayers('lead_block')} class:sorted={sortColumn === 'lead_block'} class:asc={sortDirection === 'asc'}>
-                        Lead Block {sortColumn === 'lead_block' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
-                    </th>
-
-                    <!-- Defensive Skills -->
-                    <th on:click={() => sortPlayers('tackle')} class:sorted={sortColumn === 'tackle'} class:asc={sortDirection === 'asc'}>
-                        Tackle {sortColumn === 'tackle' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
-                    </th>
-                    <th on:click={() => sortPlayers('hit_power')} class:sorted={sortColumn === 'hit_power'} class:asc={sortDirection === 'asc'}>
-                        Hit Power {sortColumn === 'hit_power' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
-                    </th>
-                    <th on:click={() => sortPlayers('power_moves')} class:sorted={sortColumn === 'power_moves'} class:asc={sortDirection === 'asc'}>
-                        Power Moves {sortColumn === 'power_moves' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
-                    </th>
-                    <th on:click={() => sortPlayers('finesse_moves')} class:sorted={sortColumn === 'finesse_moves'} class:asc={sortDirection === 'asc'}>
-                        Finesse Moves {sortColumn === 'finesse_moves' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
-                    </th>
-                    <th on:click={() => sortPlayers('block_shedding')} class:sorted={sortColumn === 'block_shedding'} class:asc={sortDirection === 'asc'}>
-                        Block Shedding {sortColumn === 'block_shedding' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
-                    </th>
-                    <th on:click={() => sortPlayers('pursuit')} class:sorted={sortColumn === 'pursuit'} class:asc={sortDirection === 'asc'}>
-                        Pursuit {sortColumn === 'pursuit' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
-                    </th>
-                    <th on:click={() => sortPlayers('man_coverage')} class:sorted={sortColumn === 'man_coverage'} class:asc={sortDirection === 'asc'}>
-                        Man Coverage {sortColumn === 'man_coverage' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
-                    </th>
-                    <th on:click={() => sortPlayers('zone_coverage')} class:sorted={sortColumn === 'zone_coverage'} class:asc={sortDirection === 'asc'}>
-                        Zone Coverage {sortColumn === 'zone_coverage' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
-                    </th>
-                    <th on:click={() => sortPlayers('press')} class:sorted={sortColumn === 'press'} class:asc={sortDirection === 'asc'}>
-                        Press {sortColumn === 'press' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
-                    </th>
-
-                    <!-- Special Teams -->
-                    <th on:click={() => sortPlayers('kick_power')} class:sorted={sortColumn === 'kick_power'} class:asc={sortDirection === 'asc'}>
-                        Kick Power {sortColumn === 'kick_power' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
-                    </th>
-                    <th on:click={() => sortPlayers('kick_accuracy')} class:sorted={sortColumn === 'kick_accuracy'} class:asc={sortDirection === 'asc'}>
-                        Kick Accuracy {sortColumn === 'kick_accuracy' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
-                    </th>
-                    <th on:click={() => sortPlayers('kick_return')} class:sorted={sortColumn === 'kick_return'} class:asc={sortDirection === 'asc'}>
-                        Kick Return {sortColumn === 'kick_return' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
-                    </th>
-
-                    <!-- Other -->
-                    <th on:click={() => sortPlayers('injury')} class:sorted={sortColumn === 'injury'} class:asc={sortDirection === 'asc'}>
-                        Injury {sortColumn === 'injury' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
-                    </th>
-                    <th on:click={() => sortPlayers('running_style')} class:sorted={sortColumn === 'running_style'} class:asc={sortDirection === 'asc'}>
-                        Running Style {sortColumn === 'running_style' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
-                    </th>
-                </tr>
-            </thead>
             <tbody>
                 {#each players as player}
                     <tr>
-                        <!-- Base Info -->
-                        <td>{player.overall_rating}</td>
-                        <td>{player.first_name}</td>
-                        <td>{player.last_name}</td>
+                        <!-- Ratings -->
+                        <td>{player.ratings?.[0]?.overall}</td>  <!-- Using .overall instead of .overallRating -->
+                        <!-- Basic Info -->
+                        <td>{player.firstName}</td>
+                        <td>{player.lastName}</td>
                         <td>{player.height}</td>
                         <td>{player.weight}</td>
                         <td>{player.college}</td>
                         <td>{player.handedness}</td>
                         <td>{player.age}</td>
-                        <td>{player.jersey_num}</td>
-                        <td>{player.years_pro}</td>
-
-                        <!-- Position and Team Info -->
-                        <td>{player.position}</td>
-                        <td>{player.position_type}</td>
-                        <td>{player.team_label}</td>
-                        <td>{player.archetype_label}</td>
-
+                        <td>{player.jerseyNumber}</td>
+                        <td>{player.yearsPro}</td>
+                    
+                        <!-- Position, Team, Archetype -->
+                        <td>{player.position?.name}</td>  <!-- Using .name instead of .code -->
+                        <td>{player.position?.type}</td>  <!-- Using .type instead of .positionType -->
+                        <td>{player.team?.label}</td>
+                        <td>{player.archetype?.name}</td>  <!-- Using .name instead of .label -->
+                    
                         <!-- Abilities -->
-                        <td>{player.ability1}</td>
-                        <td>{player.ability2}</td>
-                        <td>{player.ability3}</td>
-                        <td>{player.ability4}</td>
-                        <td>{player.ability5}</td>
-                        <td>{player.ability6}</td>
+                        <td>{player.abilities?.[0]?.name || ''}</td>
+                        <td>{player.abilities?.[1]?.name || ''}</td>
+                        <td>{player.abilities?.[2]?.name || ''}</td>
+                        <td>{player.abilities?.[3]?.name || ''}</td>
+                        <td>{player.abilities?.[4]?.name || ''}</td>
+                        <td>{player.abilities?.[5]?.name || ''}</td>
+                    
+                        <!-- Stats - Note that stats is an array, need to access first element -->
+                        <td>{player.stats?.[0]?.speed}</td>
+                        <td>{player.stats?.[0]?.acceleration}</td>
+                        <td>{player.stats?.[0]?.agility}</td>
+                        <td>{player.stats?.[0]?.jumping}</td>
+                        <td>{player.stats?.[0]?.stamina}</td>
+                        <td>{player.stats?.[0]?.strength}</td>
+                        <td>{player.stats?.[0]?.changeOfDirection}</td>
+                        <td>{player.stats?.[0]?.awareness}</td>
+                        <td>{player.stats?.[0]?.playRecognition}</td>
+                        <td>{player.stats?.[0]?.toughness}</td>
+                        <td>{player.stats?.[0]?.bcvision}</td>
+                        <td>{player.stats?.[0]?.carrying}</td>
+                        <td>{player.stats?.[0]?.breakTackle}</td>
 
-                        <!-- Physical Attributes -->
-                        <td>{player.speed}</td>
-                        <td>{player.acceleration}</td>
-                        <td>{player.agility}</td>
-                        <td>{player.jumping}</td>
-                        <td>{player.stamina}</td>
-                        <td>{player.strength}</td>
-                        <td>{player.change_of_direction}</td>
-
-                        <!-- Mental Attributes -->
-                        <td>{player.awareness}</td>
-                        <td>{player.play_recognition}</td>
-                        <td>{player.toughness}</td>
-
-                        <!-- Offensive Skills -->
-                        <td>{player.bcvision}</td>
-                        <td>{player.carrying}</td>
-                        <td>{player.break_tackle}</td>
-                        <td>{player.break_sack}</td>
-                        <td>{player.trucking}</td>
-                        <td>{player.stiff_arm}</td>
-                        <td>{player.spin_move}</td>
-                        <td>{player.juke_move}</td>
-                        <td>{player.catching}</td>
-                        <td>{player.catch_in_traffic}</td>
-                        <td>{player.spectacular_catch}</td>
-                        <td>{player.short_route_running}</td>
-                        <td>{player.medium_route_running}</td>
-                        <td>{player.deep_route_running}</td>
-                        <td>{player.release}</td>
-
-                        <!-- Passing Skills -->
-                        <td>{player.throw_power}</td>
-                        <td>{player.throw_accuracy_short}</td>
-                        <td>{player.throw_accuracy_mid}</td>
-                        <td>{player.throw_accuracy_deep}</td>
-                        <td>{player.throw_on_the_run}</td>
-                        <td>{player.throw_under_pressure}</td>
-                        <td>{player.play_action}</td>
-
-                        <!-- Blocking Skills -->
-                        <td>{player.pass_block}</td>
-                        <td>{player.pass_block_power}</td>
-                        <td>{player.pass_block_finesse}</td>
-                        <td>{player.run_block}</td>
-                        <td>{player.run_block_power}</td>
-                        <td>{player.run_block_finesse}</td>
-                        <td>{player.impact_blocking}</td>
-                        <td>{player.lead_block}</td>
-
-                        <!-- Defensive Skills -->
-                        <td>{player.tackle}</td>
-                        <td>{player.hit_power}</td>
-                        <td>{player.power_moves}</td>
-                        <td>{player.finesse_moves}</td>
-                        <td>{player.block_shedding}</td>
-                        <td>{player.pursuit}</td>
-                        <td>{player.man_coverage}</td>
-                        <td>{player.zone_coverage}</td>
-                        <td>{player.press}</td>
-
-                        <!-- Special Teams -->
-                        <td>{player.kick_power}</td>
-                        <td>{player.kick_accuracy}</td>
-                        <td>{player.kick_return}</td>
-
-                        <!-- Other -->
-                        <td>{player.injury}</td>
-                        <td>{player.running_style}</td>
+                        <td>{player.stats?.[0]?.breakSack}</td>
+                        <td>{player.stats?.[0]?.trucking}</td>
+                        <td>{player.stats?.[0]?.stiffArm}</td>
+                        <td>{player.stats?.[0]?.spinMove}</td>
+                        <td>{player.stats?.[0]?.jukeMove}</td>
+                        <td>{player.stats?.[0]?.catching}</td>
+                        <td>{player.stats?.[0]?.catchInTraffic}</td>
+                        <td>{player.stats?.[0]?.spectacularCatch}</td>
+                        <td>{player.stats?.[0]?.shortRouteRunning}</td>
+                        <td>{player.stats?.[0]?.mediumRouteRunning}</td>
+                        <td>{player.stats?.[0]?.deepRouteRunning}</td>
+                        <td>{player.stats?.[0]?.release}</td>
+                        <td>{player.stats?.[0]?.throwPower}</td>
+                        <td>{player.stats?.[0]?.throwAccuracyShort}</td>
+                        <td>{player.stats?.[0]?.throwAccuracyMid}</td>
+                        <td>{player.stats?.[0]?.throwAccuracyDeep}</td>
+                        <td>{player.stats?.[0]?.throwOnTheRun}</td>
+                        <td>{player.stats?.[0]?.throwUnderPressure}</td>
+                        <td>{player.stats?.[0]?.playAction}</td>
+                        <td>{player.stats?.[0]?.passBlock}</td>
+                        <td>{player.stats?.[0]?.passBlockPower}</td>
+                        <td>{player.stats?.[0]?.passBlockFinesse}</td>
+                        <td>{player.stats?.[0]?.runBlock}</td>
+                        <td>{player.stats?.[0]?.runBlockPower}</td>
+                        <td>{player.stats?.[0]?.runBlockFinesse}</td>
+                        <td>{player.stats?.[0]?.impactBlocking}</td>
+                        <td>{player.stats?.[0]?.leadBlock}</td>
+                        <td>{player.stats?.[0]?.tackle}</td>
+                        <td>{player.stats?.[0]?.hitPower}</td>
+                        <td>{player.stats?.[0]?.powerMoves}</td>
+                        <td>{player.stats?.[0]?.finesseMoves}</td>
+                        <td>{player.stats?.[0]?.blockShedding}</td>
+                        <td>{player.stats?.[0]?.pursuit}</td>
+                        <td>{player.stats?.[0]?.manCoverage}</td>
+                        <td>{player.stats?.[0]?.zoneCoverage}</td>
+                        <td>{player.stats?.[0]?.press}</td>
+                        <td>{player.stats?.[0]?.kickPower}</td>
+                        <td>{player.stats?.[0]?.kickAccuracy}</td>
+                        <td>{player.stats?.[0]?.kickReturn}</td>
+                        <td>{player.stats?.[0]?.injury}</td>
+                        <td>{player.stats?.[0]?.runningStyle}</td>                        
                     </tr>
                 {/each}
             </tbody>

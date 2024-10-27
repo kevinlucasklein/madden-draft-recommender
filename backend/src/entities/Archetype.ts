@@ -8,7 +8,12 @@ export class Archetype {
     @PrimaryGeneratedColumn({ name: 'archetype_id' })
     id!: number;
 
-    @Field({ nullable: true })
+    @Field()
     @Column()
     label!: string;
+
+    @Field()
+    get name(): string {  // Add a getter for 'name'
+        return this.label;
+    }
 }

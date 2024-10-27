@@ -17,6 +17,11 @@ export class PlayerRating {
     overallRating!: number;
 
     @Field()
+    get overall(): number {  // Add a getter for 'overall'
+        return this.overallRating;
+    }
+
+    @Field()
     @Column({ name: 'iteration_label' })
     iterationLabel!: string;
 

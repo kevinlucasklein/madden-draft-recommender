@@ -21,57 +21,78 @@ import { DraftSessionResolver } from './resolvers/DraftSessionResolver';
 import { DraftPickResolver } from './resolvers/DraftPickResolver';
 import { DraftRecommendationResolver } from './resolvers/DraftRecommendationResolver';
 
-async function bootstrap() {
-    // Initialize TypeORM
-    await AppDataSource.initialize();
+async function main() {
+    try {
+        // Initialize TypeORM
+        await AppDataSource.initialize();
+        console.log('Database connection established');
 
-    // Create Express app
-    const app = express();
+        const app = express();
 
-    // Build TypeGraphQL schema
-    const schema = await buildSchema({
-        resolvers: [
-            PlayerResolver,
-            TeamResolver,
-            PositionResolver,
-            ArchetypeResolver,
-            PlayerRatingResolver,
-            PlayerAbilityResolver,
-            PlayerStatsResolver,
-            PlayerAnalysisResolver,
-            RosterRequirementResolver,
-            DraftSessionResolver,
-            DraftPickResolver,
-            DraftRecommendationResolver
-        ],
-        validate: false,
-        emitSchemaFile: true, // This will generate schema file
-    });
+        const schema = await buildSchema({
+            resolvers: [
+                PlayerResolver,
+                TeamResolver,
+                PositionResolver,
+                ArchetypeResolver,
+                PlayerRatingResolver,
+                PlayerAbilityResolver,
+                PlayerStatsResolver,
+                PlayerAnalysisResolver,
+                RosterRequirementResolver,
+                DraftSessionResolver,
+                DraftPickResolver,
+                DraftRecommendationResolver
+            ],
+            validate: false,
+            emitSchemaFile: process.env.NODE_ENV !== 'production', // Only emit schema in development
+        });
 
-    // Create Apollo Server
-    const apolloServer = new ApolloServer({
-        schema,
-    });
+        const apolloServer = new ApolloServer({
+            schema,
+            // Add some basic security and monitoring
+            csrfPrevention: true,
+            cache: 'bounded',
+            plugins: [
+                // You can add plugins here for logging, monitoring, etc.
+            ],
+        });
 
-    // Start Apollo Server
-    await apolloServer.start();
+        await apolloServer.start();
 
-    // Apply middleware
-    app.use(
-        '/graphql',
-        cors<cors.CorsRequest>(),
-        json(),
-        expressMiddleware(apolloServer)
-    );
+        app.use(
+            '/graphql',
+            cors<cors.CorsRequest>({
+                origin: ['http://localhost:5173', 'http://127.0.0.1:5173'],
+                credentials: true, // If you need to support credentials
+            }),
+            json(), // Use json() instead of express.json()
+            expressMiddleware(apolloServer, {
+                context: async ({ req, res }) => ({
+                    req,
+                    res,
+                    // You can add more context here
+                }),
+            }),
+        );
 
-    // Start server
-    const PORT = process.env.PORT || 3000;
-    app.listen(PORT, () => {
-        console.log(`Server running on http://localhost:${PORT}/graphql`);
-    });
+        const PORT = process.env.PORT || 3000;
+        app.listen(PORT, () => {
+            console.log(`Server is running on http://localhost:${PORT}/graphql`);
+        });
+    } catch (error) {
+        console.error('Error starting the server:', error);
+        process.exit(1);
+    }
 }
 
-bootstrap().catch(error => {
-    console.error(error);
+// Add signal handlers for graceful shutdown
+process.on('SIGTERM', () => {
+    console.log('SIGTERM received. Shutting down gracefully...');
+    process.exit(0);
+});
+
+main().catch((err) => {
+    console.error('Unhandled error:', err);
     process.exit(1);
 });

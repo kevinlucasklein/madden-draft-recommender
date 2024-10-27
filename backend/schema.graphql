@@ -5,7 +5,46 @@
 
 type Archetype {
   id: Int!
-  label: String
+  label: String!
+  name: String!
+}
+
+input CreateDraftPickInput {
+  draftedPosition: String!
+  pickNumber: Int!
+  playerId: Int!
+  roundNumber: Int!
+  sessionId: Int!
+}
+
+input CreateDraftRecommendationInput {
+  pickNumber: Int!
+  playerId: Int!
+  reason: String!
+  recommendationScore: Float!
+  roundNumber: Int!
+  sessionId: Int!
+}
+
+input CreateDraftSessionInput {
+  draftPosition: Int!
+  rosterNeeds: String!
+  status: String! = "ACTIVE"
+}
+
+input CreatePlayerInput {
+  age: Int!
+  archetypeId: Int
+  college: String!
+  firstName: String!
+  handedness: String!
+  height: String!
+  jerseyNumber: Int!
+  lastName: String!
+  positionId: Int
+  teamId: Int
+  weight: Int!
+  yearsPro: Int!
 }
 
 """
@@ -43,27 +82,53 @@ type DraftSession {
   status: String!
 }
 
+input GenerateRecommendationsInput {
+  limit: Int
+  pickNumber: Int!
+  roundNumber: Int!
+  sessionId: Int!
+}
+
+type Mutation {
+  createDraftPick(input: CreateDraftPickInput!): DraftPick!
+  createDraftRecommendation(input: CreateDraftRecommendationInput!): DraftRecommendation!
+  createDraftSession(input: CreateDraftSessionInput!): DraftSession!
+  createPlayer(input: CreatePlayerInput!): Player!
+  deleteDraftSession(id: Int!): Boolean!
+  deletePlayer(id: Int!): Boolean!
+  generateRecommendations(input: GenerateRecommendationsInput!): [DraftRecommendation!]!
+  updateDraftPick(id: Int!, input: UpdateDraftPickInput!): DraftPick!
+  updateDraftRecommendation(id: Int!, input: UpdateDraftRecommendationInput!): DraftRecommendation!
+  updateDraftSession(id: Int!, input: UpdateDraftSessionInput!): DraftSession!
+  updatePlayer(id: Int!, input: UpdatePlayerInput!): Player!
+}
+
 type Player {
   abilities: [PlayerAbility!]
-  age: Int!
-  analysis: PlayerAnalysis
-  college: String!
-  firstName: String!
-  handedness: String!
-  height: String!
+  age: Int
+  analysis: PlayerAnalysis!
+  archetype: Archetype
+  college: String
+  firstName: String
+  handedness: String
+  height: String
   id: Int!
-  jerseyNumber: Int!
-  lastName: String!
+  jerseyNumber: Int
+  lastName: String
+  position: Position
   ratings: [PlayerRating!]
-  stats: PlayerStats
-  weight: Int!
-  yearsPro: Int!
+  stats: [PlayerStats!]
+  team: Team
+  weight: Int
+  yearsPro: Int
 }
 
 type PlayerAbility {
-  abilityLabel: String
+  abilityLabel: String!
   abilityOrder: Int!
+  description: String!
   id: Int!
+  name: String!
   player: Player!
   rating: PlayerRating
 }
@@ -87,6 +152,7 @@ type PlayerRating {
   archetype: Archetype
   id: Int!
   iterationLabel: String!
+  overall: Float!
   overallRating: Float!
   player: Player!
   position: Position
@@ -154,16 +220,18 @@ type PlayerStats {
 }
 
 type Position {
-  code: String
+  code: String!
   id: Int!
-  positionType: String
-  shortLabel: String
+  name: String!
+  type: String!
 }
 
 type Query {
+  activeDraftSession: DraftSession
   archetypes: [Archetype!]!
   draftPick(id: Int!): DraftPick
   draftPicks: [DraftPick!]!
+  draftPicksBySession(sessionId: Int!): [DraftPick!]!
   draftRecommendation(id: Int!): DraftRecommendation
   draftRecommendations: [DraftRecommendation!]!
   draftSession(id: Int!): DraftSession
@@ -175,6 +243,7 @@ type Query {
   playerStats: [PlayerStats!]!
   players: [Player!]!
   positions: [Position!]!
+  recommendationsForPick(pickNumber: Int!, roundNumber: Int!, sessionId: Int!): [DraftRecommendation!]!
   rosterRequirement(id: Int!): RosterRequirement
   rosterRequirements: [RosterRequirement!]!
   teams: [Team!]!
@@ -193,4 +262,36 @@ type Team {
   id: Int!
   label: String
   name: String
+}
+
+input UpdateDraftPickInput {
+  draftedPosition: String
+  pickNumber: Int
+  playerId: Int
+  roundNumber: Int
+}
+
+input UpdateDraftRecommendationInput {
+  reason: String
+  recommendationScore: Float
+}
+
+input UpdateDraftSessionInput {
+  rosterNeeds: String
+  status: String
+}
+
+input UpdatePlayerInput {
+  age: Int
+  archetypeId: Int
+  college: String
+  firstName: String
+  handedness: String
+  height: String
+  jerseyNumber: Int
+  lastName: String
+  positionId: Int
+  teamId: Int
+  weight: Int
+  yearsPro: Int
 }

@@ -10,6 +10,19 @@ export class PlayerAbility {
     @PrimaryGeneratedColumn({ name: 'ability_id' })
     id!: number;
 
+    @Field()
+    @Column({ name: 'ability_label' })
+    abilityLabel!: string;
+
+    @Field()
+    get name(): string {  // Add a getter for 'name'
+        return this.abilityLabel;
+    }
+
+    @Field()
+    get description(): string {  // Add a getter for 'description'
+        return this.abilityLabel;  // Or return a different field if you have one
+    }
     @Field(() => Player)
     @ManyToOne(() => Player, player => player.abilities)
     @JoinColumn({ name: 'player_id' })
@@ -19,10 +32,6 @@ export class PlayerAbility {
     @ManyToOne(() => PlayerRating)
     @JoinColumn({ name: 'rating_id' })
     rating?: PlayerRating;
-
-    @Field({ nullable: true })
-    @Column({ name: 'ability_label' })
-    abilityLabel?: string;
 
     @Field(() => Int)
     @Column({ name: 'ability_order' })
