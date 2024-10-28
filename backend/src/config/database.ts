@@ -11,6 +11,7 @@ import { RosterRequirement } from '../entities/RosterRequirement';
 import { DraftSession } from '../entities/DraftSession';
 import { DraftPick } from '../entities/DraftPick';
 import { DraftRecommendation } from '../entities/DraftRecommendation';
+import { DraftData } from '../entities/DraftData';
 import * as dotenv from 'dotenv';
 
 dotenv.config();
@@ -34,7 +35,8 @@ export const AppDataSource = new DataSource({
         RosterRequirement,
         DraftSession,
         DraftPick,
-        DraftRecommendation
+        DraftRecommendation,
+        DraftData
     ],
     synchronize: false,
     logging: true,

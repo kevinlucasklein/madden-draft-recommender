@@ -88,6 +88,11 @@
             trucking: number;
             zoneCoverage: number;
         }>;
+        draftData?: {
+            overall_pick: number;
+            round: number;
+            round_pick: number;
+        };
     }
 
     let players: PlayerData[] = [];
@@ -112,7 +117,11 @@
             let aVal, bVal;
 
             // Handle special case for overall rating
-            if (column === 'ratings.overall') {
+            if (column.startsWith('draftData.')) {
+                const draftProperty = column.split('.')[1] as keyof PlayerData['draftData'];
+                aVal = a.draftData?.[draftProperty] ?? 0;
+                bVal = b.draftData?.[draftProperty] ?? 0;
+            }else if (column === 'ratings.overall') {
                 aVal = a.ratings?.[0]?.overall ?? 0;
                 bVal = b.ratings?.[0]?.overall ?? 0;
             } else if (column.startsWith('stats.')) {
@@ -582,6 +591,21 @@
                             class:asc={sortDirection === 'asc'}>
                             Running Style {sortColumn === 'runningStyle' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
                         </th>
+                        <th on:click={() => sortPlayers('draftData.overall_pick')} 
+                            class:sorted={sortColumn === 'draftData.overall_pick'} 
+                            class:asc={sortDirection === 'asc'}>
+                            Overall Pick {sortColumn === 'draftData.overall_pick' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        </th>
+                        <th on:click={() => sortPlayers('draftData.round')} 
+                            class:sorted={sortColumn === 'draftData.round'} 
+                            class:asc={sortDirection === 'asc'}>
+                            Round {sortColumn === 'draftData.round' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        </th>
+                        <th on:click={() => sortPlayers('draftData.round_pick')} 
+                            class:sorted={sortColumn === 'draftData.round_pick'} 
+                            class:asc={sortDirection === 'asc'}>
+                            Round Pick {sortColumn === 'draftData.round_pick' ? (sortDirection === 'asc' ? '↑' : '↓') : ''}
+                        </th>
                     </tr>
                 </thead>
 
@@ -670,7 +694,10 @@
                         <td>{player.stats?.[0]?.kickAccuracy}</td>
                         <td>{player.stats?.[0]?.kickReturn}</td>
                         <td>{player.stats?.[0]?.injury}</td>
-                        <td>{player.stats?.[0]?.runningStyle}</td>                        
+                        <td>{player.stats?.[0]?.runningStyle}</td>           
+                        <td>{player.draftData?.overall_pick || '-'}</td>
+                        <td>{player.draftData?.round || '-'}</td>
+                        <td>{player.draftData?.round_pick || '-'}</td>             
                     </tr>
                 {/each}
             </tbody>

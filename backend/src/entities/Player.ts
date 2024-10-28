@@ -7,6 +7,7 @@ import { PlayerRating } from './PlayerRating';
 import { PlayerStats } from './PlayerStats';
 import { PlayerAbility } from './PlayerAbility';
 import { PlayerAnalysis } from './PlayerAnalysis';
+import { DraftData } from './DraftData';
 
 @ObjectType()
 @Entity('players')
@@ -76,4 +77,9 @@ export class Player {
     @Field(() => PlayerAnalysis)
     @OneToOne(() => PlayerAnalysis, analysis => analysis.player)
     analysis!: PlayerAnalysis;
+
+    // Add this to your existing Player entity
+    @Field(() => DraftData, { nullable: true })
+    @OneToOne(() => DraftData, draftData => draftData.player, { nullable: true })
+    draftData?: DraftData;
 }

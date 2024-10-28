@@ -4,6 +4,7 @@ import { PlayerRating } from '../entities/PlayerRating';
 import { AppDataSource } from '../config/database';
 import { MoreThan } from 'typeorm';
 
+
 @InputType()
 class CreatePlayerInput {
     @Field()
@@ -97,7 +98,8 @@ export class PlayerResolver {
                     archetype: true
                 },
                 abilities: true,
-                stats: true
+                stats: true,
+                draftData: true
             },
             order: {
                 id: 'ASC'

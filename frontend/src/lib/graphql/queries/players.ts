@@ -86,6 +86,11 @@ export const GET_ALL_PLAYERS = gql`
         trucking
         zoneCoverage
       }
+      draftData {
+        overall_pick
+        round
+        round_pick
+      }
     }
   }
 `;

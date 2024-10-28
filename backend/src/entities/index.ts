@@ -11,4 +11,5 @@ export * from './RosterRequirement';
 export * from './DraftSession';
 export * from './DraftPick';
 export * from './DraftRecommendation';
+export * from './DraftData';
 
