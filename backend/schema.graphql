@@ -109,6 +109,7 @@ type Mutation {
   createPlayer(input: CreatePlayerInput!): Player!
   deleteArchetype(id: Int!): Boolean!
   deleteDraftPick(id: Int!): Boolean!
+  deleteDraftRecommendation(id: Int!): Boolean!
   deleteDraftSession(id: Int!): Boolean!
   deletePlayer(id: Int!): Boolean!
   generateRecommendations(input: GenerateRecommendationsInput!): [DraftRecommendation!]!
