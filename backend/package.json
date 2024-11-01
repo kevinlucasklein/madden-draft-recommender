@@ -6,7 +6,10 @@
     "scripts": {
         "start": "ts-node src/index.ts",
         "dev": "nodemon --exec ts-node src/index.ts",
-        "build": "tsc"
+        "build": "tsc",
+        "redis:clear": "docker exec redis redis-cli FLUSHALL",
+        "redis:list": "docker exec redis redis-cli KEYS *",
+        "redis:cli": "docker exec -it redis redis-cli"
     },
     "keywords": [],
     "author": "",
