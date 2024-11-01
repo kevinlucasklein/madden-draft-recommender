@@ -1,7 +1,9 @@
 import { Resolver, Query } from 'type-graphql';
 import { Team } from '../entities/Team';
 import { AppDataSource } from '../config/database';
+import { Service } from 'typedi';
 
+@Service()
 @Resolver(of => Team)
 export class TeamResolver {
     @Query(() => [Team])

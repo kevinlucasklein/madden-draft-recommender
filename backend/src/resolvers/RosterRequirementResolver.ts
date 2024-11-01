@@ -1,7 +1,9 @@
 import { Resolver, Query, Arg, Int } from 'type-graphql';
 import { RosterRequirement } from '../entities/RosterRequirement';
 import { AppDataSource } from '../config/database';
+import { Service } from 'typedi';
 
+@Service()
 @Resolver(of => RosterRequirement)
 export class RosterRequirementResolver {
     @Query(() => [RosterRequirement])

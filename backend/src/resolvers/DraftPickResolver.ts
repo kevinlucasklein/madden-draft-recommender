@@ -2,7 +2,9 @@ import { Resolver, Query, Mutation, Arg, Int } from 'type-graphql';
 import { DraftPick } from '../entities/DraftPick';
 import { CreateDraftPickInput, UpdateDraftPickInput } from '../inputs';
 import { AppDataSource } from '../config/database';
+import { Service } from 'typedi';
 
+@Service()
 @Resolver(of => DraftPick)
 export class DraftPickResolver {
     // Existing queries

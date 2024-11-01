@@ -1,7 +1,9 @@
 import { Resolver, Query } from 'type-graphql';
 import { Archetype } from '../entities/Archetype';
 import { AppDataSource } from '../config/database';
+import { Service } from 'typedi';
 
+@Service()
 @Resolver(of => Archetype)
 export class ArchetypeResolver {
     @Query(() => [Archetype])

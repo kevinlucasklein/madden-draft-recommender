@@ -1,7 +1,9 @@
 import { Resolver, Query, Arg, Int, Mutation } from "type-graphql";
 import { DraftData } from "../entities/DraftData";
 import { AppDataSource } from '../config/database';
+import { Service } from 'typedi';
 
+@Service()
 @Resolver(DraftData)
 export class DraftDataResolver {
   @Query(() => [DraftData])

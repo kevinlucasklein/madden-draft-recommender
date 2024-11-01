@@ -9,7 +9,9 @@ import { AppDataSource } from '../config/database';
 import { Player } from '../entities/Player';
 import { DraftSession } from '../entities/DraftSession';
 import { Not, In } from 'typeorm';
+import { Service } from 'typedi';
 
+@Service()
 @Resolver(of => DraftRecommendation)
 export class DraftRecommendationResolver {
     // Basic queries

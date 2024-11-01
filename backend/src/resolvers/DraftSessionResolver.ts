@@ -2,7 +2,9 @@ import { Resolver, Query, Mutation, Arg, Int } from 'type-graphql';
 import { DraftSession } from '../entities/DraftSession';
 import { CreateDraftSessionInput, UpdateDraftSessionInput } from '../inputs';
 import { AppDataSource } from '../config/database';
+import { Service } from 'typedi';
 
+@Service()
 @Resolver(of => DraftSession)
 export class DraftSessionResolver {
     // Existing queries...

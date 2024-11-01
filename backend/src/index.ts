@@ -5,6 +5,7 @@ import { expressMiddleware } from '@apollo/server/express4';
 import { json } from 'body-parser';
 import cors from 'cors';
 import { buildSchema } from 'type-graphql';
+import { Container, ContainerInstance } from 'typedi';
 import { AppDataSource } from './config/database';
 
 // Import all resolvers
@@ -20,6 +21,13 @@ import { RosterRequirementResolver } from './resolvers/RosterRequirementResolver
 import { DraftSessionResolver } from './resolvers/DraftSessionResolver';
 import { DraftPickResolver } from './resolvers/DraftPickResolver';
 import { DraftRecommendationResolver } from './resolvers/DraftRecommendationResolver';
+
+interface MyContext {
+    requestId: string;
+    container: ContainerInstance;  // Changed from typeof Container
+    req: express.Request;
+    res: express.Response;
+}
 
 async function main() {
     try {
@@ -44,17 +52,24 @@ async function main() {
                 DraftPickResolver,
                 DraftRecommendationResolver
             ],
+            container: ({ context }) => context.container,
             validate: false,
-            emitSchemaFile: process.env.NODE_ENV !== 'production', // Only emit schema in development
+            emitSchemaFile: process.env.NODE_ENV !== 'production',
         });
 
-        const apolloServer = new ApolloServer({
+        const apolloServer = new ApolloServer<MyContext>({  // Add the type parameter here
             schema,
-            // Add some basic security and monitoring
             csrfPrevention: true,
             cache: 'bounded',
             plugins: [
-                // You can add plugins here for logging, monitoring, etc.
+                {
+                    requestDidStart: async () => ({
+                        async willSendResponse(requestContext) {
+                            // Cleanup scoped container
+                            Container.reset(requestContext.contextValue.requestId);
+                        },
+                    }),
+                },
             ],
         });
 
@@ -64,15 +79,17 @@ async function main() {
             '/graphql',
             cors<cors.CorsRequest>({
                 origin: ['http://localhost:5173', 'http://127.0.0.1:5173'],
-                credentials: true, // If you need to support credentials
+                credentials: true,
             }),
-            json(), // Use json() instead of express.json()
+            json(),
             expressMiddleware(apolloServer, {
-                context: async ({ req, res }) => ({
-                    req,
-                    res,
-                    // You can add more context here
-                }),
+                context: async ({ req, res }) => {
+                    const requestId = Math.floor(Math.random() * Number.MAX_SAFE_INTEGER).toString();
+                    const container = Container.of(requestId); // Get scoped container
+                    const context = { requestId, container, req, res };
+                    container.set('context', context);
+                    return context;
+                },
             }),
         );
 
