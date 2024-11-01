@@ -1,64 +1,47 @@
-import { Resolver, Query, Arg, Int, Mutation } from "type-graphql";
-import { DraftData } from "../entities/DraftData";
-import { AppDataSource } from '../config/database';
+import { Resolver, Query, Mutation, Arg, Int } from "type-graphql";
 import { Service } from 'typedi';
+import { DraftData } from "../entities/DraftData";
+import { DraftDataService } from "../services/DraftDataService";
+import { CreateDraftDataInput, UpdateDraftDataInput } from "../inputs/DraftDataInput";
 
 @Service()
 @Resolver(DraftData)
 export class DraftDataResolver {
-  @Query(() => [DraftData])
-  async draftData(): Promise<DraftData[]> {
-    try {
-      return await AppDataSource.getRepository(DraftData).find({ 
-        relations: ["player"],
-        order: { overall_pick: 'ASC' }
-      });
-    } catch (error) {
-      console.error('Error fetching draft data:', error);
-      throw new Error('Failed to fetch draft data');
+    constructor(
+        private draftDataService: DraftDataService
+    ) {}
+
+    @Query(() => [DraftData])
+    async draftData(): Promise<DraftData[]> {
+        return this.draftDataService.findAll();
     }
-  }
 
-  @Query(() => DraftData, { nullable: true })
-  async draftDataById(@Arg("player_id", () => Int) player_id: number): Promise<DraftData | null> {
-    try {
-      return await AppDataSource.getRepository(DraftData).findOne({ 
-        where: { player_id }, 
-        relations: ["player"] 
-      });
-    } catch (error) {
-      console.error('Error fetching draft data by ID:', error);
-      return null;
+    @Query(() => DraftData, { nullable: true })
+    async draftDataById(
+        @Arg("player_id", () => Int) player_id: number
+    ): Promise<DraftData | null> {
+        return this.draftDataService.findOneById(player_id);
     }
-  }
 
-  @Mutation(() => DraftData)
-  async createDraftData(
-    @Arg("player_id", () => Int) player_id: number,
-    @Arg("overall_pick", () => Int) overall_pick: number,
-    @Arg("round", () => Int) round: number,
-    @Arg("round_pick", () => Int) round_pick: number,
-  ): Promise<DraftData> {
-    try {
-      const repository = AppDataSource.getRepository(DraftData);
-      
-      // Check if draft data already exists for this player
-      const existing = await repository.findOne({ where: { player_id } });
-      if (existing) {
-        throw new Error('Draft data already exists for this player');
-      }
-
-      const draftData = repository.create({
-        player_id,
-        overall_pick,
-        round,
-        round_pick,
-      });
-
-      return await repository.save(draftData);
-    } catch (error) {
-      console.error('Error creating draft data:', error);
-      throw error;
+    @Mutation(() => DraftData)
+    async createDraftData(
+        @Arg("input") input: CreateDraftDataInput
+    ): Promise<DraftData> {
+        return this.draftDataService.create(input);
     }
-  }
+
+    @Mutation(() => DraftData)
+    async updateDraftData(
+        @Arg("player_id", () => Int) player_id: number,
+        @Arg("input") input: UpdateDraftDataInput
+    ): Promise<DraftData> {
+        return this.draftDataService.update(player_id, input);
+    }
+
+    @Mutation(() => Boolean)
+    async deleteDraftData(
+        @Arg("player_id", () => Int) player_id: number
+    ): Promise<boolean> {
+        return this.draftDataService.delete(player_id);
+    }
 }

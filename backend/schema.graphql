@@ -9,6 +9,10 @@ type Archetype {
   name: String!
 }
 
+input CreateArchetypeInput {
+  label: String!
+}
+
 input CreateDraftPickInput {
   draftedPosition: String!
   pickNumber: Int!
@@ -98,13 +102,16 @@ input GenerateRecommendationsInput {
 }
 
 type Mutation {
+  createArchetype(input: CreateArchetypeInput!): Archetype!
   createDraftPick(input: CreateDraftPickInput!): DraftPick!
   createDraftRecommendation(input: CreateDraftRecommendationInput!): DraftRecommendation!
   createDraftSession(input: CreateDraftSessionInput!): DraftSession!
   createPlayer(input: CreatePlayerInput!): Player!
+  deleteArchetype(id: Int!): Boolean!
   deleteDraftSession(id: Int!): Boolean!
   deletePlayer(id: Int!): Boolean!
   generateRecommendations(input: GenerateRecommendationsInput!): [DraftRecommendation!]!
+  updateArchetype(id: Int!, input: UpdateArchetypeInput!): Archetype!
   updateDraftPick(id: Int!, input: UpdateDraftPickInput!): DraftPick!
   updateDraftRecommendation(id: Int!, input: UpdateDraftRecommendationInput!): DraftRecommendation!
   updateDraftSession(id: Int!, input: UpdateDraftSessionInput!): DraftSession!
@@ -237,6 +244,7 @@ type Position {
 
 type Query {
   activeDraftSession: DraftSession
+  archetype(id: Int!): Archetype
   archetypes: [Archetype!]!
   draftPick(id: Int!): DraftPick
   draftPicks: [DraftPick!]!
@@ -271,6 +279,10 @@ type Team {
   id: Int!
   label: String
   name: String
+}
+
+input UpdateArchetypeInput {
+  label: String
 }
 
 input UpdateDraftPickInput {

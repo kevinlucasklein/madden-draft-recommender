@@ -34,19 +34,56 @@ export class RedisService {
     }
 
     async get<T>(key: string): Promise<T | null> {
-        const data = await this.client.get(key);
-        return data ? JSON.parse(data) : null;
+        try {
+            const data = await this.client.get(key);
+            return data ? JSON.parse(data) : null;
+        } catch (error) {
+            console.error(`Redis get error for key ${key}:`, error);
+            return null;
+        }
     }
 
     async set(key: string, value: any, ttl: number = this.DEFAULT_TTL): Promise<void> {
-        await this.client.set(key, JSON.stringify(value), 'EX', ttl);
+        try {
+            await this.client.set(key, JSON.stringify(value), 'EX', ttl);
+        } catch (error) {
+            console.error(`Redis set error for key ${key}:`, error);
+        }
     }
 
     async del(key: string): Promise<void> {
-        await this.client.del(key);
+        try {
+            await this.client.del(key);
+        } catch (error) {
+            console.error(`Redis del error for key ${key}:`, error);
+        }
     }
 
     async clearCache(): Promise<void> {
-        await this.client.flushall();
+        try {
+            await this.client.flushall();
+        } catch (error) {
+            console.error('Redis clearCache error:', error);
+        }
+    }
+
+    async delByPattern(pattern: string): Promise<void> {
+        try {
+            const keys = await this.client.keys(pattern);
+            if (keys.length > 0) {
+                await this.client.del(...keys);
+            }
+        } catch (error) {
+            console.error(`Redis delByPattern error for pattern ${pattern}:`, error);
+        }
+    }
+
+    async exists(key: string): Promise<boolean> {
+        try {
+            return (await this.client.exists(key)) === 1;
+        } catch (error) {
+            console.error(`Redis exists error for key ${key}:`, error);
+            return false;
+        }
     }
 }
