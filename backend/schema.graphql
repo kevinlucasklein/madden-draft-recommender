@@ -154,6 +154,11 @@ input CreateRosterRequirementInput {
   positionGroup: String!
 }
 
+input CreateTeamInput {
+  label: String!
+  name: String!
+}
+
 """
 A date-time string at UTC, such as 2007-12-03T10:15:30Z, compliant with the `date-time` format outlined in section 5.6 of the RFC 3339 profile of the ISO 8601 standard for representation of dates and times using the Gregorian calendar.This scalar is serialized to a string in ISO 8601 format and parsed from a string in ISO 8601 format.
 """
@@ -216,6 +221,7 @@ type Mutation {
   createPlayerStats(input: CreatePlayerStatsInput!): PlayerStats!
   createPosition(input: CreatePositionInput!): Position!
   createRosterRequirement(input: CreateRosterRequirementInput!): RosterRequirement!
+  createTeam(input: CreateTeamInput!): Team!
   deleteArchetype(id: Int!): Boolean!
   deleteDraftPick(id: Int!): Boolean!
   deleteDraftRecommendation(id: Int!): Boolean!
@@ -227,6 +233,7 @@ type Mutation {
   deletePlayerStats(id: Int!): Boolean!
   deletePosition(id: Int!): Boolean!
   deleteRosterRequirement(id: Int!): Boolean!
+  deleteTeam(id: Int!): Boolean!
   generateRecommendations(input: GenerateRecommendationsInput!): [DraftRecommendation!]!
   reorderPlayerAbilities(abilityIds: [Int!]!, playerId: Int!): [PlayerAbility!]!
   updateArchetype(id: Int!, input: UpdateArchetypeInput!): Archetype!
@@ -241,6 +248,7 @@ type Mutation {
   updatePlayerStats(id: Int!, input: UpdatePlayerStatsInput!): PlayerStats!
   updatePosition(id: Int!, input: UpdatePositionInput!): Position!
   updateRosterRequirement(id: Int!, input: UpdateRosterRequirementInput!): RosterRequirement!
+  updateTeam(id: Int!, input: UpdateTeamInput!): Team!
 }
 
 type Player {
@@ -400,6 +408,8 @@ type Query {
   rosterRequirement(id: Int!): RosterRequirement
   rosterRequirements: [RosterRequirement!]!
   rosterRequirementsByGroup(group: String!): [RosterRequirement!]!
+  team(id: Int!): Team
+  teamByName(name: String!): Team
   teams: [Team!]!
   validateRoster(positions: [String!]!): Boolean!
 }
@@ -552,4 +562,9 @@ input UpdateRosterRequirementInput {
   minimumPlayers: Int
   position: String
   positionGroup: String
+}
+
+input UpdateTeamInput {
+  label: String
+  name: String
 }
