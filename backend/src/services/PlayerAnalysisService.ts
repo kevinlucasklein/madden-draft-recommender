@@ -4,14 +4,18 @@ import { PlayerAnalysis } from '../entities/PlayerAnalysis';
 import { AppDataSource } from '../config/database';
 import { RedisService } from './RedisService';
 import { CreatePlayerAnalysisInput, UpdatePlayerAnalysisInput } from '../inputs/PlayerAnalysisInput';
+import { POSITION_STAT_WEIGHTS, POSITION_THRESHOLDS, determinePlayerArchetype } from '../config/positionStats';
+import { Player } from '../entities/Player';
 
 @Service()
 export class PlayerAnalysisService {
     private analysisRepository: Repository<PlayerAnalysis>;
+    private playerRepository: Repository<Player>;
     private redisService: RedisService;
 
     constructor() {
         this.analysisRepository = AppDataSource.getRepository(PlayerAnalysis);
+        this.playerRepository = AppDataSource.getRepository(Player);
         this.redisService = RedisService.getInstance();
     }
 
@@ -186,5 +190,114 @@ export class PlayerAnalysisService {
             console.error('Error in updateRanks:', error);
             throw error;
         }
+    }
+
+    async analyzePlayer(playerId: number): Promise<PlayerAnalysis> {
+        try {
+            // Get player with stats
+            const player = await this.playerRepository.findOne({
+                where: { id: playerId },
+                relations: ['stats', 'ratings']
+            });
+    
+            if (!player?.stats?.[0]) {
+                throw new Error('Player stats not found');
+            }
+    
+            const stats = player.stats[0];
+            const positionScores = new Map<string, number>();
+            let bestPosition = '';
+            let bestScore = 0;
+    
+            // Calculate score for each position
+            for (const [position, weights] of Object.entries(POSITION_STAT_WEIGHTS)) {
+                let score = 0;
+                let totalWeight = 0;
+    
+                for (const [stat, weight] of Object.entries(weights)) {
+                    // Ensure values are numbers
+                    const statValue = Number(stats[stat as keyof typeof stats]) || 0;
+                    const posThresholds = POSITION_THRESHOLDS[position as keyof typeof POSITION_THRESHOLDS];
+                    if (!posThresholds) continue;
+                    
+                    const threshold = Number(posThresholds[stat as keyof typeof posThresholds]) || 0;
+                    if (threshold === 0) continue; // Skip if no threshold defined
+                    
+                    // Calculate how close the stat is to the ideal threshold
+                    const statScore = Math.min(statValue / threshold, 1.2);
+                    score += Number(statScore) * Number(weight);
+                    totalWeight += Number(weight);
+                }
+    
+                // Normalize score to 0-100
+                const normalizedScore = (score / totalWeight) * 100;
+                positionScores.set(position, normalizedScore);
+    
+                if (normalizedScore > bestScore) {
+                    bestScore = normalizedScore;
+                    bestPosition = position;
+                }
+            }
+    
+            // Get enhanced player archetype analysis
+            const archetype = determinePlayerArchetype(stats, bestPosition);
+    
+            // Create or update player analysis
+            const analysis = await this.findByPlayer(playerId) || this.analysisRepository.create({
+                player: { id: playerId }
+            });
+    
+            // Update analysis with enhanced data
+            analysis.normalizedScore = bestScore;
+            analysis.suggestedPosition = bestPosition;
+            analysis.positionScores = Object.fromEntries(positionScores);
+            analysis.playerType = archetype.primaryType;
+            analysis.secondaryType = archetype.secondaryType;
+            analysis.alternatePositions = archetype.versatility.slice(1); // Skip primary position
+            analysis.specialTraits = archetype.specialTraits;
+            analysis.strengthsWeaknesses = this.analyzeStrengthsWeaknesses(stats, bestPosition);
+    
+            const saved = await this.analysisRepository.save(analysis);
+            await this.updateRanks();
+            return saved;
+        } catch (error) {
+            console.error('Error in analyzePlayer:', error);
+            throw error;
+        }
+    }
+    private determinePlayerType(stats: any, position: string): string {
+        const pos = position as keyof typeof POSITION_THRESHOLDS;
+        if (!POSITION_THRESHOLDS[pos]) return 'Unknown';
+
+        switch (pos) {
+            case 'QB':
+                return stats.throwPower > 90 ? 'Strong Arm' :
+                       stats.speed > 85 ? 'Scrambler' :
+                       stats.throwAccuracyShort > 90 ? 'West Coast' :
+                       'Balanced';
+            // Add other positions...
+            default:
+                return 'Unknown';
+        }
+    }
+
+    private analyzeStrengthsWeaknesses(stats: any, position: string): string {
+        const strengths: string[] = [];
+        const weaknesses: string[] = [];
+        const pos = position as keyof typeof POSITION_THRESHOLDS;
+        const thresholds = POSITION_THRESHOLDS[pos];
+        
+        if (!thresholds) return 'Position not recognized';
+
+        for (const [stat, threshold] of Object.entries(thresholds)) {
+            const value = stats[stat as keyof typeof stats];
+            if (value >= threshold * 1.1) {
+                strengths.push(stat);
+            } else if (value <= threshold * 0.9) {
+                weaknesses.push(stat);
+            }
+        }
+
+        return `Strengths: ${strengths.join(', ')}. Weaknesses: ${weaknesses.join(', ')}.`;
     }
 }

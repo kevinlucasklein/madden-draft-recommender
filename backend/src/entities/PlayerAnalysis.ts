@@ -2,6 +2,7 @@ import { Entity, PrimaryGeneratedColumn, Column, OneToOne, JoinColumn } from 'ty
 import { ObjectType, Field, Int, Float } from 'type-graphql';
 import { Player } from './Player';
 import { PlayerRating } from './PlayerRating';
+import { GraphQLJSONObject } from 'graphql-type-json';
 
 @ObjectType()
 @Entity('player_analysis')
@@ -32,13 +33,21 @@ export class PlayerAnalysis {
     @Column({ name: 'best_position_score' })
     bestPositionScore?: number;
 
-    @Field(() => Float, { nullable: true })
-    @Column({ name: 'normalized_score' })
-    normalizedScore?: number;
+    @Field()
+    @Column('float')
+    normalizedScore!: number;
 
-    @Field({ nullable: true })
-    @Column({ name: 'suggested_position' })
-    suggestedPosition?: string;
+    @Field()
+    @Column()
+    suggestedPosition!: string;
+
+    @Field(() => GraphQLJSONObject)
+    @Column('jsonb')
+    positionScores!: Record<string, number>;
+
+    @Field()
+    @Column('text')
+    strengthsWeaknesses!: string;
 
     @Field({ nullable: true })
     @Column({ name: 'position_change_recommended' })
@@ -55,4 +64,16 @@ export class PlayerAnalysis {
     @Field(() => Int, { nullable: true })
     @Column()
     rank?: number;
+
+    @Field(() => String, { nullable: true })
+    @Column({ nullable: true })
+    secondaryType?: string;
+
+    @Field(() => [String])
+    @Column('text', { array: true, default: [] })
+    alternatePositions: string[];
+
+    @Field(() => [String])
+    @Column('text', { array: true, default: [] })
+    specialTraits: string[];
 }

@@ -209,6 +209,11 @@ input GenerateRecommendationsInput {
   sessionId: Int!
 }
 
+"""
+The `JSONObject` scalar type represents JSON objects as specified by [ECMA-404](http://www.ecma-international.org/publications/files/ECMA-ST/ECMA-404.pdf).
+"""
+scalar JSONObject
+
 type Mutation {
   createArchetype(input: CreateArchetypeInput!): Archetype!
   createDraftPick(input: CreateDraftPickInput!): DraftPick!
@@ -284,17 +289,22 @@ type PlayerAbility {
 
 type PlayerAnalysis {
   ageAdjustedScore: Float
+  alternatePositions: [String!]!
   bestPositionScore: Float
   id: Int!
-  normalizedScore: Float
+  normalizedScore: Float!
   originalPositionScore: Float
   player: Player!
   playerType: String
   positionChangeRecommended: Boolean
+  positionScores: JSONObject!
   projectedPick: Int
   rank: Int
   rating: PlayerRating
-  suggestedPosition: String
+  secondaryType: String
+  specialTraits: [String!]!
+  strengthsWeaknesses: String!
+  suggestedPosition: String!
 }
 
 type PlayerRating {
