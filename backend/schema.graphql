@@ -36,6 +36,13 @@ input CreateDraftSessionInput {
   status: String! = "ACTIVE"
 }
 
+input CreatePlayerAbilityInput {
+  abilityLabel: String!
+  abilityOrder: Int!
+  playerId: Int!
+  ratingId: Int
+}
+
 input CreatePlayerInput {
   age: Int!
   archetypeId: Int
@@ -107,17 +114,21 @@ type Mutation {
   createDraftRecommendation(input: CreateDraftRecommendationInput!): DraftRecommendation!
   createDraftSession(input: CreateDraftSessionInput!): DraftSession!
   createPlayer(input: CreatePlayerInput!): Player!
+  createPlayerAbility(input: CreatePlayerAbilityInput!): PlayerAbility!
   deleteArchetype(id: Int!): Boolean!
   deleteDraftPick(id: Int!): Boolean!
   deleteDraftRecommendation(id: Int!): Boolean!
   deleteDraftSession(id: Int!): Boolean!
   deletePlayer(id: Int!): Boolean!
+  deletePlayerAbility(id: Int!): Boolean!
   generateRecommendations(input: GenerateRecommendationsInput!): [DraftRecommendation!]!
+  reorderPlayerAbilities(abilityIds: [Int!]!, playerId: Int!): [PlayerAbility!]!
   updateArchetype(id: Int!, input: UpdateArchetypeInput!): Archetype!
   updateDraftPick(id: Int!, input: UpdateDraftPickInput!): DraftPick!
   updateDraftRecommendation(id: Int!, input: UpdateDraftRecommendationInput!): DraftRecommendation!
   updateDraftSession(id: Int!, input: UpdateDraftSessionInput!): DraftSession!
   updatePlayer(id: Int!, input: UpdatePlayerInput!): Player!
+  updatePlayerAbility(id: Int!, input: UpdatePlayerAbilityInput!): PlayerAbility!
 }
 
 type Player {
@@ -257,6 +268,8 @@ type Query {
   draftSessions: [DraftSession!]!
   player(id: Int): Player
   playerAbilities: [PlayerAbility!]!
+  playerAbilitiesByPlayer(playerId: Int!): [PlayerAbility!]!
+  playerAbility(id: Int!): PlayerAbility
   playerAnalyses: [PlayerAnalysis!]!
   playerRatings: [PlayerRating!]!
   playerStats: [PlayerStats!]!
@@ -302,6 +315,12 @@ input UpdateDraftRecommendationInput {
 input UpdateDraftSessionInput {
   rosterNeeds: String
   status: String
+}
+
+input UpdatePlayerAbilityInput {
+  abilityLabel: String
+  abilityOrder: Int
+  ratingId: Int
 }
 
 input UpdatePlayerInput {
