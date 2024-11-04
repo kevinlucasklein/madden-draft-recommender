@@ -72,6 +72,15 @@ input CreatePlayerInput {
   yearsPro: Int!
 }
 
+input CreatePlayerRatingInput {
+  archetypeId: Int
+  iterationLabel: String!
+  overallRating: Float!
+  playerId: Int!
+  positionId: Int
+  teamId: Int
+}
+
 """
 A date-time string at UTC, such as 2007-12-03T10:15:30Z, compliant with the `date-time` format outlined in section 5.6 of the RFC 3339 profile of the ISO 8601 standard for representation of dates and times using the Gregorian calendar.This scalar is serialized to a string in ISO 8601 format and parsed from a string in ISO 8601 format.
 """
@@ -130,6 +139,7 @@ type Mutation {
   createPlayer(input: CreatePlayerInput!): Player!
   createPlayerAbility(input: CreatePlayerAbilityInput!): PlayerAbility!
   createPlayerAnalysis(input: CreatePlayerAnalysisInput!): PlayerAnalysis!
+  createPlayerRating(input: CreatePlayerRatingInput!): PlayerRating!
   deleteArchetype(id: Int!): Boolean!
   deleteDraftPick(id: Int!): Boolean!
   deleteDraftRecommendation(id: Int!): Boolean!
@@ -137,6 +147,7 @@ type Mutation {
   deletePlayer(id: Int!): Boolean!
   deletePlayerAbility(id: Int!): Boolean!
   deletePlayerAnalysis(id: Int!): Boolean!
+  deletePlayerRating(id: Int!): Boolean!
   generateRecommendations(input: GenerateRecommendationsInput!): [DraftRecommendation!]!
   reorderPlayerAbilities(abilityIds: [Int!]!, playerId: Int!): [PlayerAbility!]!
   updateArchetype(id: Int!, input: UpdateArchetypeInput!): Archetype!
@@ -147,6 +158,7 @@ type Mutation {
   updatePlayerAbility(id: Int!, input: UpdatePlayerAbilityInput!): PlayerAbility!
   updatePlayerAnalysis(id: Int!, input: UpdatePlayerAnalysisInput!): PlayerAnalysis!
   updatePlayerAnalysisRanks: Boolean!
+  updatePlayerRating(id: Int!, input: UpdatePlayerRatingInput!): PlayerRating!
 }
 
 type Player {
@@ -284,6 +296,7 @@ type Query {
   draftRecommendations: [DraftRecommendation!]!
   draftSession(id: Int!): DraftSession
   draftSessions: [DraftSession!]!
+  latestPlayerRating(playerId: Int!): PlayerRating
   player(id: Int): Player
   playerAbilities: [PlayerAbility!]!
   playerAbilitiesByPlayer(playerId: Int!): [PlayerAbility!]!
@@ -291,7 +304,9 @@ type Query {
   playerAnalyses: [PlayerAnalysis!]!
   playerAnalysis(id: Int!): PlayerAnalysis
   playerAnalysisByPlayer(playerId: Int!): PlayerAnalysis
+  playerRating(id: Int!): PlayerRating
   playerRatings: [PlayerRating!]!
+  playerRatingsByPlayer(playerId: Int!): [PlayerRating!]!
   playerStats: [PlayerStats!]!
   players: [Player!]!
   positions: [Position!]!
@@ -369,4 +384,12 @@ input UpdatePlayerInput {
   teamId: Int
   weight: Int
   yearsPro: Int
+}
+
+input UpdatePlayerRatingInput {
+  archetypeId: Int
+  iterationLabel: String
+  overallRating: Float
+  positionId: Int
+  teamId: Int
 }
