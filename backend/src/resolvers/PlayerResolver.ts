@@ -2,13 +2,15 @@ import { Resolver, Query, Mutation, Arg, Int, FieldResolver, Root } from 'type-g
 import { Service } from 'typedi';
 import { Player } from '../entities/Player';
 import { PlayerService } from '../services/PlayerService';
+import { PlayerRatingService } from '../services/PlayerRatingService';
 import { CreatePlayerInput, UpdatePlayerInput } from '../inputs/PlayerInput';
 
 @Service()
 @Resolver(of => Player)
 export class PlayerResolver {
     constructor(
-        private playerService: PlayerService
+        private playerService: PlayerService,
+        private ratingService: PlayerRatingService
     ) {}
 
     @Query(() => [Player])
@@ -22,7 +24,8 @@ export class PlayerResolver {
         if (player.ratings?.[0]?.position) {
             return player.ratings[0].position;
         }
-        return this.playerService.getLatestRating(player.id, 'position');
+        const rating = await this.ratingService.findLatestByPlayer(player.id);
+        return rating?.position || null;
     }
 
     @FieldResolver()
@@ -30,7 +33,8 @@ export class PlayerResolver {
         if (player.ratings?.[0]?.team) {
             return player.ratings[0].team;
         }
-        return this.playerService.getLatestRating(player.id, 'team');
+        const rating = await this.ratingService.findLatestByPlayer(player.id);
+        return rating?.team || null;
     }
 
     @FieldResolver()
@@ -38,7 +42,8 @@ export class PlayerResolver {
         if (player.ratings?.[0]?.archetype) {
             return player.ratings[0].archetype;
         }
-        return this.playerService.getLatestRating(player.id, 'archetype');
+        const rating = await this.ratingService.findLatestByPlayer(player.id);
+        return rating?.archetype || null;
     }
 
     @Query(() => Player, { nullable: true })

@@ -103,6 +103,70 @@ export class PlayerStatsService {
         }
     }
 
+    async findAllLatestStats(): Promise<any[]> {
+        return this.statsRepository.query(`
+            SELECT DISTINCT ON (player_id) 
+                stat_id,
+                player_id,
+                speed,
+                acceleration,
+                agility,
+                jumping,
+                stamina,
+                strength,
+                awareness,
+                bcvision,
+                block_shedding,
+                break_sack,
+                break_tackle,
+                carrying,
+                catch_in_traffic,
+                catching,
+                change_of_direction,
+                deep_route_running,
+                finesse_moves,
+                hit_power,
+                impact_blocking,
+                injury,
+                juke_move,
+                kick_accuracy,
+                kick_power,
+                kick_return,
+                lead_block,
+                man_coverage,
+                medium_route_running,
+                pass_block,
+                pass_block_finesse,
+                pass_block_power,
+                play_action,
+                play_recognition,
+                power_moves,
+                press,
+                pursuit,
+                release,
+                run_block,
+                run_block_finesse,
+                run_block_power,
+                running_style,
+                short_route_running,
+                spectacular_catch,
+                spin_move,
+                stiff_arm,
+                tackle,
+                throw_accuracy_deep,
+                throw_accuracy_mid,
+                throw_accuracy_short,
+                throw_on_the_run,
+                throw_power,
+                throw_under_pressure,
+                toughness,
+                trucking,
+                zone_coverage
+            FROM player_stats
+            ORDER BY player_id, stat_id DESC
+        `);
+    }
+
     async create(input: CreatePlayerStatsInput): Promise<PlayerStats> {
         try {
             const stats = this.statsRepository.create({

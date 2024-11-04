@@ -1,21 +1,22 @@
 import { Service } from 'typedi';
 import { Repository } from 'typeorm';
 import { Player } from '../entities/Player';
-import { PlayerRating } from '../entities/PlayerRating';
 import { AppDataSource } from '../config/database';
 import { RedisService } from './RedisService';
 import { CreatePlayerInput, UpdatePlayerInput } from '../inputs/PlayerInput';
+import { PlayerStatsService } from './PlayerStatsService';
+
 import { MoreThan } from 'typeorm';
 
 @Service()
 export class PlayerService {
     private playerRepository: Repository<Player>;
-    private ratingRepository: Repository<PlayerRating>;
     private redisService: RedisService;
 
-    constructor() {
+    constructor(
+        private statsService: PlayerStatsService
+    ) {
         this.playerRepository = AppDataSource.getRepository(Player);
-        this.ratingRepository = AppDataSource.getRepository(PlayerRating);
         this.redisService = RedisService.getInstance();
     }
 
@@ -38,53 +39,98 @@ export class PlayerService {
             }
 
             console.log('Fetching players from database');
-            const players = await this.playerRepository
-                .createQueryBuilder('player')
-                .leftJoinAndSelect('player.ratings', 'ratings')
-                .leftJoinAndSelect('ratings.position', 'position')
-                .leftJoinAndSelect('ratings.team', 'team')
-                .leftJoinAndSelect('ratings.archetype', 'archetype')
-                .leftJoinAndSelect('player.abilities', 'abilities')
-                .leftJoinAndSelect('player.stats', 'stats')
-                .leftJoinAndSelect('player.draftData', 'draftData')
-                .leftJoinAndSelect('player.analysis', 'analysis')
-                .orderBy('player.id', 'ASC')
-                .addOrderBy('ratings.id', 'DESC')
-                .getMany();
+            
+            // Fetch players and stats in parallel for better performance
+            const [players, allStats] = await Promise.all([
+                this.playerRepository
+                    .createQueryBuilder('player')
+                    .leftJoinAndSelect('player.abilities', 'abilities')
+                    .leftJoinAndSelect('player.ratings', 'ratings')
+                    .leftJoinAndSelect('ratings.position', 'position')
+                    .leftJoinAndSelect('ratings.team', 'team')
+                    .leftJoinAndSelect('ratings.archetype', 'archetype')
+                    .leftJoinAndSelect('player.draftData', 'draftData')
+                    .orderBy('player.id', 'ASC')
+                    .addOrderBy('ratings.id', 'DESC')
+                    .getMany(),
+                
+                // Get all stats in a single query
+                this.statsService.findAllLatestStats()
+            ]);
+
+            // Create a map for quick stats lookup
+            const statsMap = new Map(allStats.map(stats => [stats.player_id, stats]));
+
+            // Combine the data in memory
+            for (const player of players) {
+                const playerStats = statsMap.get(player.id);
+                if (playerStats) {
+                    player.stats = [{
+                        id: playerStats.stat_id,
+                        player: player,
+                        speed: playerStats.speed,
+                        acceleration: playerStats.acceleration,
+                        agility: playerStats.agility,
+                        jumping: playerStats.jumping,
+                        stamina: playerStats.stamina,
+                        strength: playerStats.strength,
+                        awareness: playerStats.awareness,
+                        bcvision: playerStats.bcvision,
+                        blockShedding: playerStats.block_shedding,
+                        breakSack: playerStats.break_sack,
+                        breakTackle: playerStats.break_tackle,
+                        carrying: playerStats.carrying,
+                        catchInTraffic: playerStats.catch_in_traffic,
+                        catching: playerStats.catching,
+                        changeOfDirection: playerStats.change_of_direction,
+                        deepRouteRunning: playerStats.deep_route_running,
+                        finesseMoves: playerStats.finesse_moves,
+                        hitPower: playerStats.hit_power,
+                        impactBlocking: playerStats.impact_blocking,
+                        injury: playerStats.injury,
+                        jukeMove: playerStats.juke_move,
+                        kickAccuracy: playerStats.kick_accuracy,
+                        kickPower: playerStats.kick_power,
+                        kickReturn: playerStats.kick_return,
+                        leadBlock: playerStats.lead_block,
+                        manCoverage: playerStats.man_coverage,
+                        mediumRouteRunning: playerStats.medium_route_running,
+                        passBlock: playerStats.pass_block,
+                        passBlockFinesse: playerStats.pass_block_finesse,
+                        passBlockPower: playerStats.pass_block_power,
+                        playAction: playerStats.play_action,
+                        playRecognition: playerStats.play_recognition,
+                        powerMoves: playerStats.power_moves,
+                        press: playerStats.press,
+                        pursuit: playerStats.pursuit,
+                        release: playerStats.release,
+                        runBlock: playerStats.run_block,
+                        runBlockFinesse: playerStats.run_block_finesse,
+                        runBlockPower: playerStats.run_block_power,
+                        runningStyle: playerStats.running_style,
+                        shortRouteRunning: playerStats.short_route_running,
+                        spectacularCatch: playerStats.spectacular_catch,
+                        spinMove: playerStats.spin_move,
+                        stiffArm: playerStats.stiff_arm,
+                        tackle: playerStats.tackle,
+                        throwAccuracyDeep: playerStats.throw_accuracy_deep,
+                        throwAccuracyMid: playerStats.throw_accuracy_mid,
+                        throwAccuracyShort: playerStats.throw_accuracy_short,
+                        throwOnTheRun: playerStats.throw_on_the_run,
+                        throwPower: playerStats.throw_power,
+                        throwUnderPressure: playerStats.throw_under_pressure,
+                        toughness: playerStats.toughness,
+                        trucking: playerStats.trucking,
+                        zoneCoverage: playerStats.zone_coverage
+                    }];
+                }
+            }
 
             await this.redisService.set(cacheKey, players);
             return players;
         } catch (error) {
             console.error('Error in findAll:', error);
             throw error;
-        }
-    }
-
-    async getLatestRating(playerId: number, relation: string) {
-        try {
-            const cacheKey = `player:${playerId}:${relation}`;
-            const cached = await this.redisService.get(cacheKey);
-
-            if (cached) {
-                console.log(`Returning cached ${relation} for player ${playerId}`);
-                return cached;
-            }
-
-            console.log(`Fetching ${relation} from database for player ${playerId}`);
-            const rating = await this.ratingRepository.findOne({
-                where: { player: { id: playerId } },
-                relations: [relation],
-                order: { id: 'DESC' }
-            });
-
-            const result = rating?.[relation as keyof PlayerRating];
-            if (result) {
-                await this.redisService.set(cacheKey, result);
-            }
-            return result;
-        } catch (error) {
-            console.error(`Error in getLatestRating for player ${playerId}:`, error);
-            return null;
         }
     }
 
