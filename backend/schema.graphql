@@ -81,6 +81,65 @@ input CreatePlayerRatingInput {
   teamId: Int
 }
 
+input CreatePlayerStatsInput {
+  acceleration: Float
+  agility: Float
+  awareness: Float
+  bcvision: Float
+  blockShedding: Float
+  breakSack: Float
+  breakTackle: Float
+  carrying: Float
+  catchInTraffic: Float
+  catching: Float
+  changeOfDirection: Float
+  deepRouteRunning: Float
+  finesseMoves: Float
+  hitPower: Float
+  impactBlocking: Float
+  injury: Float
+  jukeMove: Float
+  jumping: Float
+  kickAccuracy: Float
+  kickPower: Float
+  kickReturn: Float
+  leadBlock: Float
+  manCoverage: Float
+  mediumRouteRunning: Float
+  passBlock: Float
+  passBlockFinesse: Float
+  passBlockPower: Float
+  playAction: Float
+  playRecognition: Float
+  playerId: Int!
+  powerMoves: Float
+  press: Float
+  pursuit: Float
+  ratingId: Int
+  release: Float
+  runBlock: Float
+  runBlockFinesse: Float
+  runBlockPower: Float
+  runningStyle: String
+  shortRouteRunning: Float
+  spectacularCatch: Float
+  speed: Float
+  spinMove: Float
+  stamina: Float
+  stiffArm: Float
+  strength: Float
+  tackle: Float
+  throwAccuracyDeep: Float
+  throwAccuracyMid: Float
+  throwAccuracyShort: Float
+  throwOnTheRun: Float
+  throwPower: Float
+  throwUnderPressure: Float
+  toughness: Float
+  trucking: Float
+  zoneCoverage: Float
+}
+
 """
 A date-time string at UTC, such as 2007-12-03T10:15:30Z, compliant with the `date-time` format outlined in section 5.6 of the RFC 3339 profile of the ISO 8601 standard for representation of dates and times using the Gregorian calendar.This scalar is serialized to a string in ISO 8601 format and parsed from a string in ISO 8601 format.
 """
@@ -140,6 +199,7 @@ type Mutation {
   createPlayerAbility(input: CreatePlayerAbilityInput!): PlayerAbility!
   createPlayerAnalysis(input: CreatePlayerAnalysisInput!): PlayerAnalysis!
   createPlayerRating(input: CreatePlayerRatingInput!): PlayerRating!
+  createPlayerStats(input: CreatePlayerStatsInput!): PlayerStats!
   deleteArchetype(id: Int!): Boolean!
   deleteDraftPick(id: Int!): Boolean!
   deleteDraftRecommendation(id: Int!): Boolean!
@@ -148,6 +208,7 @@ type Mutation {
   deletePlayerAbility(id: Int!): Boolean!
   deletePlayerAnalysis(id: Int!): Boolean!
   deletePlayerRating(id: Int!): Boolean!
+  deletePlayerStats(id: Int!): Boolean!
   generateRecommendations(input: GenerateRecommendationsInput!): [DraftRecommendation!]!
   reorderPlayerAbilities(abilityIds: [Int!]!, playerId: Int!): [PlayerAbility!]!
   updateArchetype(id: Int!, input: UpdateArchetypeInput!): Archetype!
@@ -159,6 +220,7 @@ type Mutation {
   updatePlayerAnalysis(id: Int!, input: UpdatePlayerAnalysisInput!): PlayerAnalysis!
   updatePlayerAnalysisRanks: Boolean!
   updatePlayerRating(id: Int!, input: UpdatePlayerRatingInput!): PlayerRating!
+  updatePlayerStats(id: Int!, input: UpdatePlayerStatsInput!): PlayerStats!
 }
 
 type Player {
@@ -307,7 +369,9 @@ type Query {
   playerRating(id: Int!): PlayerRating
   playerRatings: [PlayerRating!]!
   playerRatingsByPlayer(playerId: Int!): [PlayerRating!]!
+  playerStat(id: Int!): PlayerStats
   playerStats: [PlayerStats!]!
+  playerStatsByPlayer(playerId: Int!): PlayerStats
   players: [Player!]!
   positions: [Position!]!
   recommendationsForPick(pickNumber: Int!, roundNumber: Int!, sessionId: Int!): [DraftRecommendation!]!
@@ -392,4 +456,62 @@ input UpdatePlayerRatingInput {
   overallRating: Float
   positionId: Int
   teamId: Int
+}
+
+input UpdatePlayerStatsInput {
+  acceleration: Float
+  agility: Float
+  awareness: Float
+  bcvision: Float
+  blockShedding: Float
+  breakSack: Float
+  breakTackle: Float
+  carrying: Float
+  catchInTraffic: Float
+  catching: Float
+  changeOfDirection: Float
+  deepRouteRunning: Float
+  finesseMoves: Float
+  hitPower: Float
+  impactBlocking: Float
+  injury: Float
+  jukeMove: Float
+  jumping: Float
+  kickAccuracy: Float
+  kickPower: Float
+  kickReturn: Float
+  leadBlock: Float
+  manCoverage: Float
+  mediumRouteRunning: Float
+  passBlock: Float
+  passBlockFinesse: Float
+  passBlockPower: Float
+  playAction: Float
+  playRecognition: Float
+  powerMoves: Float
+  press: Float
+  pursuit: Float
+  ratingId: Int
+  release: Float
+  runBlock: Float
+  runBlockFinesse: Float
+  runBlockPower: Float
+  runningStyle: String
+  shortRouteRunning: Float
+  spectacularCatch: Float
+  speed: Float
+  spinMove: Float
+  stamina: Float
+  stiffArm: Float
+  strength: Float
+  tackle: Float
+  throwAccuracyDeep: Float
+  throwAccuracyMid: Float
+  throwAccuracyShort: Float
+  throwOnTheRun: Float
+  throwPower: Float
+  throwUnderPressure: Float
+  toughness: Float
+  trucking: Float
+  zoneCoverage: Float
 }
