@@ -146,6 +146,14 @@ input CreatePositionInput {
   type: String!
 }
 
+input CreateRosterRequirementInput {
+  isRequired: Boolean!
+  maximumPlayers: Int!
+  minimumPlayers: Int!
+  position: String!
+  positionGroup: String!
+}
+
 """
 A date-time string at UTC, such as 2007-12-03T10:15:30Z, compliant with the `date-time` format outlined in section 5.6 of the RFC 3339 profile of the ISO 8601 standard for representation of dates and times using the Gregorian calendar.This scalar is serialized to a string in ISO 8601 format and parsed from a string in ISO 8601 format.
 """
@@ -207,6 +215,7 @@ type Mutation {
   createPlayerRating(input: CreatePlayerRatingInput!): PlayerRating!
   createPlayerStats(input: CreatePlayerStatsInput!): PlayerStats!
   createPosition(input: CreatePositionInput!): Position!
+  createRosterRequirement(input: CreateRosterRequirementInput!): RosterRequirement!
   deleteArchetype(id: Int!): Boolean!
   deleteDraftPick(id: Int!): Boolean!
   deleteDraftRecommendation(id: Int!): Boolean!
@@ -217,6 +226,7 @@ type Mutation {
   deletePlayerRating(id: Int!): Boolean!
   deletePlayerStats(id: Int!): Boolean!
   deletePosition(id: Int!): Boolean!
+  deleteRosterRequirement(id: Int!): Boolean!
   generateRecommendations(input: GenerateRecommendationsInput!): [DraftRecommendation!]!
   reorderPlayerAbilities(abilityIds: [Int!]!, playerId: Int!): [PlayerAbility!]!
   updateArchetype(id: Int!, input: UpdateArchetypeInput!): Archetype!
@@ -230,6 +240,7 @@ type Mutation {
   updatePlayerRating(id: Int!, input: UpdatePlayerRatingInput!): PlayerRating!
   updatePlayerStats(id: Int!, input: UpdatePlayerStatsInput!): PlayerStats!
   updatePosition(id: Int!, input: UpdatePositionInput!): Position!
+  updateRosterRequirement(id: Int!, input: UpdateRosterRequirementInput!): RosterRequirement!
 }
 
 type Player {
@@ -388,7 +399,9 @@ type Query {
   recommendationsForPick(pickNumber: Int!, roundNumber: Int!, sessionId: Int!): [DraftRecommendation!]!
   rosterRequirement(id: Int!): RosterRequirement
   rosterRequirements: [RosterRequirement!]!
+  rosterRequirementsByGroup(group: String!): [RosterRequirement!]!
   teams: [Team!]!
+  validateRoster(positions: [String!]!): Boolean!
 }
 
 type RosterRequirement {
@@ -531,4 +544,12 @@ input UpdatePositionInput {
   code: String
   name: String
   type: String
+}
+
+input UpdateRosterRequirementInput {
+  isRequired: Boolean
+  maximumPlayers: Int
+  minimumPlayers: Int
+  position: String
+  positionGroup: String
 }
