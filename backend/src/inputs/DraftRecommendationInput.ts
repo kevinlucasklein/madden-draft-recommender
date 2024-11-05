@@ -41,6 +41,12 @@ export class GenerateRecommendationsInput {
     @Field(() => Int)
     pickNumber!: number;
 
+    @Field(() => Int)
+    totalTeams!: number;  // Add this field
+
+    @Field(() => Boolean)
+    isSnakeDraft!: boolean;  // Add this field
+
     @Field(() => Int, { nullable: true })
-    limit?: number;  // Number of recommendations to generate
+    limit?: number;
 }

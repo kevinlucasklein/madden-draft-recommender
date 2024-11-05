@@ -41,7 +41,7 @@ export class DraftRecommendationResolver {
     @Mutation(() => [DraftRecommendation])
     async generateRecommendations(
         @Arg('input') input: GenerateRecommendationsInput
-    ) {
+    ): Promise<DraftRecommendation[]> {
         return this.recommendationService.generate(input);
     }
 

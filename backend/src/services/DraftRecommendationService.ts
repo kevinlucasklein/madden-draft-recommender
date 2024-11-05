@@ -1,5 +1,5 @@
 import { Service } from 'typedi';
-import { Repository, Not, In } from 'typeorm';
+import { Repository, Not, In, Between, IsNull } from 'typeorm';
 import { DraftRecommendation } from '../entities/DraftRecommendation';
 import { DraftSession } from '../entities/DraftSession';
 import { Player } from '../entities/Player';
@@ -191,41 +191,170 @@ export class DraftRecommendationService {
             const session = await this.sessionRepository.findOneOrFail({
                 where: { id: input.sessionId }
             });
+    
+            // Calculate overall pick number
+            const overallPick = this.calculateOverallPick(
+                input.roundNumber,
+                input.pickNumber,
+                input.totalTeams,
+                input.isSnakeDraft
+            );
+    
+            // Calculate a reasonable range for picks (e.g., +/- 20 picks from current position)
+            const pickRange = 20;
+            const minPick = Math.max(1, overallPick - pickRange);
+            const maxPick = overallPick + pickRange;
+    
+            // Get available players with draft data within our range
+            let availablePlayers = await this.playerRepository.find({
+                relations: {
+                    ratings: {
+                        position: true,
+                    },
+                    draftData: true
+                },
+                where: {
+                    draftData: {
+                        overall_pick: Between(minPick, maxPick)
+                    }
+                },
+                select: {
+                    id: true,
+                    firstName: true,
+                    lastName: true,
+                    ratings: {
+                        id: true,
+                        overallRating: true,
+                        position: {
+                            id: true,
+                            name: true,
+                            code: true
+                        }
+                    },
+                    draftData: {
+                        overall_pick: true,
+                        round: true,
+                        round_pick: true
+                    }
+                },
+                order: {
+                    draftData: {
+                        overall_pick: 'ASC'
+                    }
+                }
+            });
 
-            // Get available players
-            const availablePlayers = await this.getAvailablePlayers(input.sessionId);
-            const rosterNeeds = JSON.parse(session.rosterNeeds) as Record<string, number>;
+            if (availablePlayers.length === 0) {
+                console.log('No players found within pick range, expanding search...');
+                // If no players found, try without the range restriction
+                availablePlayers = await this.playerRepository.find({
+                    relations: {
+                        ratings: {
+                            position: true,
+                        },
+                        draftData: true
+                    },
+                    where: {
+                        draftData: Not(IsNull())  // Ensure we only get players with draft data
+                    },
+                    select: {
+                        id: true,
+                        firstName: true,
+                        lastName: true,
+                        ratings: {
+                            id: true,
+                            overallRating: true,
+                            position: {
+                                id: true,
+                                name: true,
+                                code: true
+                            }
+                        },
+                        draftData: {
+                            overall_pick: true,
+                            round: true,
+                            round_pick: true
+                        }
+                    },
+                    order: {
+                        draftData: {
+                            overall_pick: 'ASC'
+                        }
+                    },
+                    take: input.limit
+                });
+            }
+    
             const recommendations: DraftRecommendation[] = [];
 
             for (const player of availablePlayers) {
-                // Ensure player has been analyzed
-                if (!player.analysis) {
-                    await this.playerAnalysisService.analyzePlayer(player.id);
-                }
-
-                let recommendationScore = player.analysis.normalizedScore;
+                const position = player.ratings?.[0]?.position?.name || 'Unknown Position';
+                const playerName = `${player.firstName || ''} ${player.lastName || ''}`.trim() || 'Unknown Player';
                 
-                // Adjust score based on roster needs
-                if (player.analysis.suggestedPosition) {
-                    const positionNeed = rosterNeeds[player.analysis.suggestedPosition] || 0;
-                    const needMultiplier = this.calculateNeedMultiplier(positionNeed);
-                    recommendationScore *= needMultiplier;
-                }
-
-                // Adjust for draft position value
-                recommendationScore *= this.getDraftPositionValue(input.roundNumber);
-
-                recommendations.push(this.createRecommendation(
-                    input,
-                    player,
-                    recommendationScore
-                ));
+                // Calculate recommendation score based on draft position proximity
+                const playerOverallPick = player.draftData?.overall_pick || 0;
+                const pickDifference = Math.abs(playerOverallPick - overallPick);
+                
+                // Score decreases as the difference in pick position increases
+                const recommendationScore = Math.exp(-pickDifference / 10);
+    
+                const recommendation = this.recommendationRepository.create({
+                    session: { id: input.sessionId },
+                    player: { id: player.id },
+                    roundNumber: input.roundNumber,
+                    pickNumber: input.pickNumber,
+                    recommendationScore,
+                    reason: `${position} - ${playerName} (Projected: Overall Pick ${playerOverallPick})`
+                });
+    
+                recommendations.push(recommendation);
             }
-
-            return this.saveRecommendations(recommendations, input.limit || 10);
+    
+            // Save all recommendations
+            const savedRecommendations = await this.recommendationRepository.save(
+                recommendations.slice(0, input.limit)  // Ensure we only save up to the limit
+            );
+        
+            // Fetch the saved recommendations with all relations
+            const recommendationsWithRelations = await this.recommendationRepository.find({
+                where: {
+                    id: In(savedRecommendations.map(rec => rec.id))
+                },
+                relations: {
+                    player: {
+                        ratings: {
+                            position: true
+                        },
+                        draftData: true
+                    }
+                },
+                order: {
+                    recommendationScore: 'DESC'
+                },
+                take: input.limit
+            });
+    
+            return recommendationsWithRelations;
         } catch (error) {
             console.error('Error in generate:', error);
             throw error;
+        }
+    }
+    
+    // Helper method to calculate overall pick number
+    private calculateOverallPick(round: number, pick: number, totalTeams: number, isSnakeDraft: boolean): number {
+        if (!isSnakeDraft) {
+            // For standard draft, it's just (round - 1) * totalTeams + pick
+            return (round - 1) * totalTeams + pick;
+        } else {
+            // For snake draft, even-numbered rounds go in reverse
+            if (round % 2 === 1) {
+                // Odd rounds go forward
+                return (round - 1) * totalTeams + pick;
+            } else {
+                // Even rounds go backward
+                return (round - 1) * totalTeams + (totalTeams - pick + 1);
+            }
         }
     }
 
@@ -304,5 +433,55 @@ export class DraftRecommendationService {
             console.error(`Error in delete for id ${id}:`, error);
             throw error;
         }
+    }
+    
+        async generateRecommendations(
+            sessionId: number,
+            round: number,
+            pick: number,
+            totalTeams: number,
+            isSnakeDraft: boolean,
+            limit: number = 5
+        ): Promise<DraftRecommendation[]> {
+            try {
+                // Calculate overall pick number
+                const overallPick = this.calculateOverallPick(round, pick, totalTeams, isSnakeDraft);
+        
+                // Get available players with draft data
+                const availablePlayers = await this.playerRepository.find({
+                    relations: {
+                        draftData: true,
+                        position: true,
+                        ratings: true
+                    },
+                    order: {
+                        draftData: {
+                            overall_pick: 'ASC'
+                        }
+                    }
+                });
+        
+                const recommendations: DraftRecommendation[] = [];
+        
+                for (const player of availablePlayers) {
+                    // Calculate score based on historical draft position proximity
+                    const pickDifference = Math.abs((player.draftData?.overall_pick ?? 0) - overallPick);
+                    const recommendationScore = 1 / (1 + pickDifference * 0.1);
+        
+                    recommendations.push(this.createRecommendation({
+                        sessionId,
+                        roundNumber: round,
+                        pickNumber: pick,
+                        totalTeams,        // Add this
+                        isSnakeDraft,      // Add this
+                        limit
+                    }, player, recommendationScore));
+                }
+        
+                return this.saveRecommendations(recommendations, limit);
+            } catch (error) {
+                console.error('Error generating recommendations:', error);
+                throw error;
+            }
     }
 }

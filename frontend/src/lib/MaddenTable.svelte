@@ -712,7 +712,7 @@
 <style>
     .table-wrapper {
         position: fixed;
-        top: 0;
+        top: 60px; /* Update this to match navbar height */
         left: 0;
         right: 0;
         bottom: 0;
