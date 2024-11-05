@@ -9,7 +9,10 @@
         "build": "tsc",
         "redis:clear": "docker exec redis redis-cli FLUSHALL",
         "redis:list": "docker exec redis redis-cli KEYS *",
-        "redis:cli": "docker exec -it redis redis-cli"
+        "redis:cli": "docker exec -it redis redis-cli",
+        "redis:start": "docker run --name redis -p 6379:6379 -d redis:latest",
+        "redis:stop": "docker stop redis && docker rm redis",
+        "redis:restart": "npm run redis:stop && npm run redis:start"
     },
     "keywords": [],
     "author": "",
