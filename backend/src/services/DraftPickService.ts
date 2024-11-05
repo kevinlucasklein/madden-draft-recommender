@@ -93,7 +93,11 @@ export class DraftPickService {
                 },
                 relations: {
                     session: true,
-                    player: true
+                    player: {
+                        ratings: {
+                            position: true
+                        }
+                    }
                 },
                 order: {
                     roundNumber: 'ASC',
@@ -122,7 +126,25 @@ export class DraftPickService {
 
             const saved = await this.draftPickRepository.save(pick);
             await this.clearDraftPickCache(undefined, input.sessionId);
-            return saved;
+
+            // Fetch the complete draft pick with relations after saving
+            const completePick = await this.draftPickRepository.findOne({
+                where: { id: saved.id },
+                relations: {
+                    session: true,
+                    player: {
+                        ratings: {
+                            position: true
+                        }
+                    }
+                }
+            });
+
+            if (!completePick) {
+                throw new Error(`Failed to fetch draft pick with id ${saved.id}`);
+            }
+
+            return completePick;
         } catch (error) {
             console.error('Error in create:', error);
             throw error;
