@@ -34,17 +34,90 @@
     }
 
     // Store recommendations
+    // Store recommendations
     let recommendations: Recommendation[] = [];
 
-    // Form inputs
+    // Form inputs - simplified
     let sessionId: number | null = null;
-    let round: number = 1;
-    let pick: number = 1;
-    let totalTeams: number = 32;
+    let firstRoundPick: number = 1;
     let isSnakeDraft: boolean = true;
     let limit: number = 5;
     let loading = false;
     let error: string | null = null;
+    let sessionStarted = false;
+
+    // Add constant for teams
+    const TOTAL_TEAMS = 32;
+
+    // Current draft position tracking
+    let currentRound: number = 1;
+    let currentPick: number = 1;
+
+    function calculateCurrentPick(round: number, firstPick: number, snake: boolean): number {
+        if (!snake) {
+            return firstPick;
+        }
+        
+        // For even-numbered rounds, reverse the pick order
+        if (round % 2 === 0) {
+            return TOTAL_TEAMS - firstPick + 1;
+        }
+        
+        // For odd-numbered rounds, use the original pick
+        return firstPick;
+    }
+
+    async function nextPick() {
+        if (currentRound < 54) {
+            currentRound++;
+            currentPick = calculateCurrentPick(currentRound, firstRoundPick, isSnakeDraft);
+            
+            try {
+                const result = await client.mutate({
+                    mutation: GENERATE_RECOMMENDATIONS,
+                    variables: {
+                        input: {
+                            sessionId,
+                            roundNumber: currentRound,
+                            pickNumber: currentPick,
+                            isSnakeDraft,
+                            limit
+                        }
+                    }
+                });
+                
+                recommendations = result.data.generateRecommendations;
+            } catch (e) {
+                error = e instanceof Error ? e.message : 'An unknown error occurred';
+            }
+        }
+    }
+
+    async function previousPick() {
+        if (currentRound > 1) {
+            currentRound--;
+            currentPick = calculateCurrentPick(currentRound, firstRoundPick, isSnakeDraft);
+            
+            try {
+                const result = await client.mutate({
+                    mutation: GENERATE_RECOMMENDATIONS,
+                    variables: {
+                        input: {
+                            sessionId,
+                            roundNumber: currentRound,
+                            pickNumber: currentPick,
+                            isSnakeDraft,
+                            limit
+                        }
+                    }
+                });
+                
+                recommendations = result.data.generateRecommendations;
+            } catch (e) {
+                error = e instanceof Error ? e.message : 'An unknown error occurred';
+            }
+        }
+    }
 
     async function createDraftSession() {
         try {
@@ -52,9 +125,9 @@
                 mutation: CREATE_DRAFT_SESSION,
                 variables: {
                     input: {
-                        draftPosition: pick,
+                        draftPosition: firstRoundPick,
                         status: 'ACTIVE',
-                        rosterNeeds: JSON.stringify({}) // You can customize roster needs here
+                        rosterNeeds: JSON.stringify({})
                     }
                 }
             });
@@ -72,19 +145,17 @@
         error = null;
         
         try {
-            // Create session if we don't have one
-            if (!sessionId) {
-                sessionId = await createDraftSession();
-            }
-
+            sessionId = await createDraftSession();
+            currentPick = calculateCurrentPick(currentRound, firstRoundPick, isSnakeDraft);
+            sessionStarted = true;
+            
             const result = await client.mutate({
                 mutation: GENERATE_RECOMMENDATIONS,
                 variables: {
                     input: {
                         sessionId,
-                        roundNumber: round,
-                        pickNumber: pick,
-                        totalTeams,
+                        roundNumber: currentRound,
+                        pickNumber: currentPick,
                         isSnakeDraft,
                         limit
                     }
@@ -94,6 +165,7 @@
             recommendations = result.data.generateRecommendations;
         } catch (e) {
             error = e instanceof Error ? e.message : 'An unknown error occurred';
+            sessionStarted = false;
         } finally {
             loading = false;
         }
@@ -105,19 +177,18 @@
     
     <form on:submit|preventDefault={handleSubmit} class="recommendation-form">
         <div class="form-group">
-            <label for="round">Round:</label>
-            <input type="number" id="round" bind:value={round} min="1" required>
+            <label for="firstRoundPick">Your First Round Pick:</label>
+            <input 
+                type="number" 
+                id="firstRoundPick" 
+                bind:value={firstRoundPick} 
+                min="1" 
+                max={TOTAL_TEAMS}
+                required
+            >
         </div>
 
-        <div class="form-group">
-            <label for="pick">Pick:</label>
-            <input type="number" id="pick" bind:value={pick} min="1" required>
-        </div>
-
-        <div class="form-group">
-            <label for="totalTeams">Total Teams:</label>
-            <input type="number" id="totalTeams" bind:value={totalTeams} min="1" required>
-        </div>
+        <!-- Remove totalTeams input -->
 
         <div class="form-group">
             <label>
@@ -128,13 +199,32 @@
 
         <div class="form-group">
             <label for="limit">Number of Recommendations:</label>
-            <input type="number" id="limit" bind:value={limit} min="1" max="10" required>
+            <input 
+                type="number" 
+                id="limit" 
+                bind:value={limit} 
+                min="1" 
+                max="10" 
+                required
+            >
         </div>
 
         <button type="submit" disabled={loading}>
-            {loading ? 'Generating...' : 'Get Recommendations'}
+            {loading ? 'Generating...' : 'Start Draft'}
         </button>
     </form>
+
+    {#if recommendations.length > 0}
+        <div class="draft-navigation">
+            <button on:click={previousPick} disabled={currentRound === 1}>
+                Previous Pick
+            </button>
+            <span>Round {currentRound}, Pick {currentPick} {#if isSnakeDraft}(Snake Draft){/if}</span>
+            <button on:click={nextPick} disabled={currentRound >= 54}>
+                Next Pick
+            </button>
+        </div>
+    {/if}
 
     {#if error}
         <div class="error">

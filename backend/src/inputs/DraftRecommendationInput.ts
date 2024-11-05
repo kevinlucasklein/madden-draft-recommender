@@ -33,20 +33,17 @@ export class UpdateDraftRecommendationInput {
 @InputType()
 export class GenerateRecommendationsInput {
     @Field(() => Int)
-    sessionId!: number;
+    sessionId: number;
 
     @Field(() => Int)
-    roundNumber!: number;
+    roundNumber: number;
 
     @Field(() => Int)
-    pickNumber!: number;
-
-    @Field(() => Int)
-    totalTeams!: number;  // Add this field
+    pickNumber: number;
 
     @Field(() => Boolean)
-    isSnakeDraft!: boolean;  // Add this field
+    isSnakeDraft: boolean;
 
-    @Field(() => Int, { nullable: true })
-    limit?: number;
+    @Field(() => Int)
+    limit: number;
 }

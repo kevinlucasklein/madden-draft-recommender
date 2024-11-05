@@ -204,11 +204,10 @@ type DraftSession {
 
 input GenerateRecommendationsInput {
   isSnakeDraft: Boolean!
-  limit: Int
+  limit: Int!
   pickNumber: Int!
   roundNumber: Int!
   sessionId: Int!
-  totalTeams: Int!
 }
 
 """

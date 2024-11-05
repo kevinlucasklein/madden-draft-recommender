@@ -1,5 +1,6 @@
 import { Service } from 'typedi';
 import { Repository, Not, In, Between, IsNull } from 'typeorm';
+import { DraftPickCalculator } from '../utility/DraftPickCalculator';
 import { DraftRecommendation } from '../entities/DraftRecommendation';
 import { DraftSession } from '../entities/DraftSession';
 import { Player } from '../entities/Player';
@@ -11,6 +12,7 @@ import {
     UpdateDraftRecommendationInput,
     GenerateRecommendationsInput 
 } from '../inputs/DraftRecommendationInput';
+import { DraftPick } from '../types/DraftPick';
 
 @Service()
 export class DraftRecommendationService {
@@ -18,6 +20,7 @@ export class DraftRecommendationService {
     private sessionRepository: Repository<DraftSession>;
     private playerRepository: Repository<Player>;
     private redisService: RedisService;
+    private userPicks: Map<number, DraftPick[]> = new Map(); // Store picks by sessionId
     private playerAnalysisService: PlayerAnalysisService;
 
     constructor(playerAnalysisService: PlayerAnalysisService) {
@@ -26,6 +29,19 @@ export class DraftRecommendationService {
         this.playerRepository = AppDataSource.getRepository(Player);
         this.redisService = RedisService.getInstance();
         this.playerAnalysisService = playerAnalysisService;
+    }
+
+    async initializeSession(
+        sessionId: number, 
+        firstRoundPick: number,
+        isSnakeDraft: boolean = true
+    ): Promise<void> {
+        const picks = DraftPickCalculator.calculateAllPicks(
+            firstRoundPick,
+            54,  // totalRounds
+            isSnakeDraft
+        );
+        this.userPicks.set(sessionId, picks);
     }
 
     private async getAvailablePlayers(sessionId: number): Promise<Player[]> {
@@ -186,24 +202,63 @@ export class DraftRecommendationService {
     }
 
 
+    private getCurrentPick(sessionId: number, round: number, pick: number): DraftPick | undefined {
+        const picks = this.userPicks.get(sessionId);
+        if (!picks) {
+            console.log(`No picks found for session ${sessionId}`); // Debug log
+            return undefined;
+        }
+        
+        const currentPick = picks.find(p => p.round === round);
+        console.log(`Found pick for round ${round}:`, currentPick); // Debug log
+        return currentPick;
+    }
+
     async generate(input: GenerateRecommendationsInput): Promise<DraftRecommendation[]> {
         try {
             const session = await this.sessionRepository.findOneOrFail({
                 where: { id: input.sessionId }
             });
     
-            // Calculate overall pick number
-            const overallPick = this.calculateOverallPick(
+            // Initialize session if not already done
+            if (!this.userPicks.has(input.sessionId)) {
+                console.log('Initializing session...'); // Debug log
+                await this.initializeSession(
+                    input.sessionId,
+                    session.draftPosition, // Use the stored draft position
+                    input.isSnakeDraft
+                );
+            }
+    
+            // Get current pick info
+            const currentPick = this.getCurrentPick(
+                input.sessionId,
                 input.roundNumber,
-                input.pickNumber,
-                input.totalTeams,
-                input.isSnakeDraft
+                input.pickNumber
             );
     
-            // Calculate a reasonable range for picks (e.g., +/- 20 picks from current position)
-            const pickRange = 20;
+            if (!currentPick) {
+                console.error('Failed to get current pick:', {
+                    sessionId: input.sessionId,
+                    round: input.roundNumber,
+                    pick: input.pickNumber
+                });
+                throw new Error('Invalid pick position or session not initialized');
+            }
+
+            // Use overall pick from calculator
+            const overallPick = currentPick.overall;
+
+            // Calculate pick range based on round
+            const baseRange = 10;
+            const roundMultiplier = Math.ceil(input.roundNumber / 2);
+            const pickRange = baseRange * roundMultiplier;
+            
             const minPick = Math.max(1, overallPick - pickRange);
             const maxPick = overallPick + pickRange;
+
+            console.log(`Round ${input.roundNumber}, Pick ${input.pickNumber} (Overall ${overallPick})`);
+            console.log(`Looking for players between picks ${minPick} and ${maxPick}`);
     
             // Get available players with draft data within our range
             let availablePlayers = await this.playerRepository.find({
@@ -346,22 +401,6 @@ export class DraftRecommendationService {
         }
     }
     
-    // Helper method to calculate overall pick number
-    private calculateOverallPick(round: number, pick: number, totalTeams: number, isSnakeDraft: boolean): number {
-        if (!isSnakeDraft) {
-            // For standard draft, it's just (round - 1) * totalTeams + pick
-            return (round - 1) * totalTeams + pick;
-        } else {
-            // For snake draft, even-numbered rounds go in reverse
-            if (round % 2 === 1) {
-                // Odd rounds go forward
-                return (round - 1) * totalTeams + pick;
-            } else {
-                // Even rounds go backward
-                return (round - 1) * totalTeams + (totalTeams - pick + 1);
-            }
-        }
-    }
 
     private calculateNeedMultiplier(positionNeed: number): number {
         if (positionNeed > 2) return 1.3;  // Desperate need
@@ -438,55 +477,5 @@ export class DraftRecommendationService {
             console.error(`Error in delete for id ${id}:`, error);
             throw error;
         }
-    }
-    
-        async generateRecommendations(
-            sessionId: number,
-            round: number,
-            pick: number,
-            totalTeams: number,
-            isSnakeDraft: boolean,
-            limit: number = 5
-        ): Promise<DraftRecommendation[]> {
-            try {
-                // Calculate overall pick number
-                const overallPick = this.calculateOverallPick(round, pick, totalTeams, isSnakeDraft);
-        
-                // Get available players with draft data
-                const availablePlayers = await this.playerRepository.find({
-                    relations: {
-                        draftData: true,
-                        position: true,
-                        ratings: true
-                    },
-                    order: {
-                        draftData: {
-                            overall_pick: 'ASC'
-                        }
-                    }
-                });
-        
-                const recommendations: DraftRecommendation[] = [];
-        
-                for (const player of availablePlayers) {
-                    // Calculate score based on historical draft position proximity
-                    const pickDifference = Math.abs((player.draftData?.overall_pick ?? 0) - overallPick);
-                    const recommendationScore = 1 / (1 + pickDifference * 0.1);
-        
-                    recommendations.push(this.createRecommendation({
-                        sessionId,
-                        roundNumber: round,
-                        pickNumber: pick,
-                        totalTeams,        // Add this
-                        isSnakeDraft,      // Add this
-                        limit
-                    }, player, recommendationScore));
-                }
-        
-                return this.saveRecommendations(recommendations, limit);
-            } catch (error) {
-                console.error('Error generating recommendations:', error);
-                throw error;
-            }
     }
 }
