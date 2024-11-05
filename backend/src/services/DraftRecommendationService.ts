@@ -291,22 +291,27 @@ export class DraftRecommendationService {
                 const position = player.ratings?.[0]?.position?.name || 'Unknown Position';
                 const playerName = `${player.firstName || ''} ${player.lastName || ''}`.trim() || 'Unknown Player';
                 
-                // Calculate recommendation score based on draft position proximity
+                // Get player's overall rating and draft position
                 const playerOverallPick = player.draftData?.overall_pick || 0;
+                const playerOverallRating = player.ratings?.[0]?.overallRating || 0;
                 const pickDifference = Math.abs(playerOverallPick - overallPick);
                 
-                // Score decreases as the difference in pick position increases
-                const recommendationScore = Math.exp(-pickDifference / 10);
-    
+                // Calculate score using both draft position and overall rating
+                // Draft position proximity has more weight (70%) than overall rating (30%)
+                const draftPositionScore = Math.exp(-pickDifference / 5); // More gradual decay
+                const ratingScore = playerOverallRating / 100;
+                
+                const recommendationScore = (draftPositionScore * 0.7) + (ratingScore * 0.3);
+            
                 const recommendation = this.recommendationRepository.create({
                     session: { id: input.sessionId },
                     player: { id: player.id },
                     roundNumber: input.roundNumber,
                     pickNumber: input.pickNumber,
                     recommendationScore,
-                    reason: `${position} - ${playerName} (Projected: Overall Pick ${playerOverallPick})`
+                    reason: `${position} - ${playerName} (Projected: Overall Pick ${playerOverallPick}, Rating: ${playerOverallRating})`
                 });
-    
+            
                 recommendations.push(recommendation);
             }
     

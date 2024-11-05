@@ -28,8 +28,13 @@ export class DraftRecommendation {
     @Column({ name: 'pick_number' })
     pickNumber!: number;
 
-    @Field(() => Float)
-    @Column({ name: 'recommendation_score' })
+    @Field(() => Float)  // Make sure this is Float, not Int
+    @Column({ 
+        name: 'recommendation_score', 
+        type: 'float',  // Explicitly set the column type
+        precision: 10,  // Add precision
+        scale: 6       // Add scale for decimal places
+    })
     recommendationScore!: number;
 
     @Field()
