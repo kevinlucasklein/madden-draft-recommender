@@ -843,10 +843,6 @@
         font-size: 0.9em;
     }
 
-    .drafted-players {
-        margin: 20px 0;
-    }
-
     .drafted-player {
         background: rgb(75, 75, 75);
         padding: 10px;
@@ -1045,41 +1041,12 @@
         background-color: #45a049;
     }
 
-    .needs-grid {
-        display: flex;
-        flex-direction: column;
-        gap: 20px;
-    }
-
-    .need-item {
-        background: rgb(77, 77, 77);
-        padding: 15px;
-        border-radius: 6px;
-        min-width: 120px;
-        max-width: 150px;
-        flex: 1;
-    }
-
-    .need-counts {
-        display: flex;
-        flex-direction: column;
-        gap: 5px;
-        color: #ccc;
-        font-size: 0.9em;
-        text-align: center;
-    }
-
     .fulfilled {
         background: #4CAF50;
     }
 
     .at-max {
         background: #ff9800;
-    }
-
-    .fulfilled .need-counts,
-    .at-max .need-counts {
-        color: white;
     }
 
         /* Update roster status styles */
@@ -1129,16 +1096,6 @@
         font-size: 1.1em;
     }
 
-        /* Add these new styles */
-        .drafted-position {
-        background: rgb(77, 77, 77);
-        padding: 15px;
-        border-radius: 6px;
-        min-width: 120px;
-        max-width: 150px;
-        flex: 1;
-    }
-
     .drafted-list {
         display: flex;
         flex-direction: column;
@@ -1173,10 +1130,5 @@
         color: #999;
         text-align: center;
         padding: 8px;
-    }
-
-    /* Update existing styles if needed */
-    .drafted-players {
-        margin: 20px 0;
     }
 </style>
