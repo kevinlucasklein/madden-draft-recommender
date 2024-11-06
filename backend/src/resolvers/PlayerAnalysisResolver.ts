@@ -49,4 +49,22 @@ export class PlayerAnalysisResolver {
         await this.analysisService.updateRanks();
         return true;
     }
+
+    @Mutation(() => Boolean)
+    async analyzeAllPlayers(): Promise<boolean> {
+        try {
+            await this.analysisService.analyzeAllPlayers();
+            return true;
+        } catch (error) {
+            console.error('Error analyzing players:', error);
+            return false;
+        }
+    }
+
+    @Mutation(() => PlayerAnalysis)
+    async analyzePlayer(
+        @Arg('playerId') playerId: number
+    ): Promise<PlayerAnalysis> {
+        return this.analysisService.analyzePlayer(playerId);
+    }
 }

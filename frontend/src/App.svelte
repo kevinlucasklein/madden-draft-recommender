@@ -3,6 +3,7 @@
   import Layout from './lib/Layout.svelte';
   import Home from './routes/Home.svelte';
   import Draft from './routes/Draft.svelte';
+  import Analysis from './routes/Analysis.svelte';
 
   let currentRoute: string;
 
@@ -36,6 +37,8 @@
       <Home />
   {:else if currentRoute === '/draft'}
       <Draft />
+  {:else if currentRoute === '/analysis'}
+      <Analysis />
   {:else}
       <div class="not-found">
           <h1>404 - Page Not Found</h1>

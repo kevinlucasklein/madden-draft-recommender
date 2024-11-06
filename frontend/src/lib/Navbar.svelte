@@ -27,6 +27,13 @@
                     Draft Recommender
                 </a>
             </li>
+            <li>
+                <a 
+                    href="/analysis" 
+                    class:active={currentPath === '/analysis'}>
+                    Position Analysis
+                </a>
+            </li>
         </ul>
     </div>
 </nav>

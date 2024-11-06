@@ -4,13 +4,16 @@ import { Player } from '../entities/Player';
 import { PlayerService } from '../services/PlayerService';
 import { PlayerRatingService } from '../services/PlayerRatingService';
 import { CreatePlayerInput, UpdatePlayerInput } from '../inputs/PlayerInput';
+import { PlayerAnalysisService } from '../services/PlayerAnalysisService';
+import { PlayerAnalysis } from '../entities/PlayerAnalysis';
 
 @Service()
 @Resolver(of => Player)
 export class PlayerResolver {
     constructor(
         private playerService: PlayerService,
-        private ratingService: PlayerRatingService
+        private ratingService: PlayerRatingService,
+        private analysisService: PlayerAnalysisService
     ) {}
 
     @Query(() => [Player])
@@ -44,6 +47,12 @@ export class PlayerResolver {
         }
         const rating = await this.ratingService.findLatestByPlayer(player.id);
         return rating?.archetype || null;
+    }
+
+    @FieldResolver(() => PlayerAnalysis, { nullable: true })
+    async analysis(@Root() player: Player) {
+        if (!player.id) return null;
+        return this.analysisService.findByPlayer(player.id);
     }
 
     @Query(() => Player, { nullable: true })
