@@ -59,6 +59,7 @@
 
     type UnitName = 'Offense' | 'Defense' | 'Special Teams';
     type PositionGroups = Record<UnitName, string[]>;
+    type PositionGroup = keyof typeof POSITION_GROUPS;
 
     const POSITION_GROUPS: PositionGroups = {
         'Offense': ['QB', 'HB', 'FB', 'WR', 'TE', 'LT', 'LG', 'C', 'RG', 'RT'],
@@ -607,82 +608,55 @@
     {/if}
 
     {#if recommendations.length > 0}
-        <div class="draft-status-container">
-            <button on:click={previousPick} disabled={currentRound === 1}>
-                Previous Pick
-            </button>
-            <span>Round {currentRound}, Pick {currentPick} {#if isSnakeDraft}(Snake Draft){/if}</span>
-            <button on:click={nextPick} disabled={currentRound >= 54}>
-                Next Pick
-            </button>
+    <div class="draft-status-container">
+        <button on:click={previousPick} disabled={currentRound === 1}>
+            Previous Pick
+        </button>
+        <span>Round {currentRound}, Pick {currentPick} {#if isSnakeDraft}(Snake Draft){/if}</span>
+        <button on:click={nextPick} disabled={currentRound >= 54}>
+            Next Pick
+        </button>
+    </div>
+
+    <div class="recommendations">
+        <h3>Recommended Players</h3>
+        <div class="recommendations-grid">
+            {#each recommendations as rec}
+                <div class="recommendation-card">
+                    <h4>{rec.player.firstName || ''} {rec.player.lastName || ''}</h4>
+                    <p>Position: {rec.player.ratings?.[0]?.position?.name || 'Unknown'}</p>
+                    <p>Overall Rating: {rec.player.ratings?.[0]?.overallRating || 'N/A'}</p>
+                    <p>Historical Draft Position: 
+                        {#if rec.player.draftData}
+                            Round {rec.player.draftData.round}, 
+                            Pick {rec.player.draftData.round_pick} 
+                            (Overall: {rec.player.draftData.overall_pick})
+                        {:else}
+                            Not Available
+                        {/if}
+                    </p>
+                    <p>Recommendation Score: {rec.recommendationScore?.toFixed(2) || '0.00'}</p>
+                    <p class="reason">Reason: {rec.reason}</p>
+                    <button 
+                        class="draft-button" 
+                        on:click={() => draftPlayer(rec)}
+                    >
+                        Draft Player
+                    </button>
+                </div>
+            {/each}
         </div>
+    </div>
 
-                <!-- Move recommendations here -->
-                <div class="recommendations">
-                    <h3>Recommended Players</h3>
-                    <div class="recommendations-grid">
-                        {#each recommendations as rec}
-                            <div class="recommendation-card">
-                                <h4>{rec.player.firstName || ''} {rec.player.lastName || ''}</h4>
-                                <p>Position: {rec.player.ratings?.[0]?.position?.name || 'Unknown'}</p>
-                                <p>Overall Rating: {rec.player.ratings?.[0]?.overallRating || 'N/A'}</p>
-                                <p>Historical Draft Position: 
-                                    {#if rec.player.draftData}
-                                        Round {rec.player.draftData.round}, 
-                                        Pick {rec.player.draftData.round_pick} 
-                                        (Overall: {rec.player.draftData.overall_pick})
-                                    {:else}
-                                        Not Available
-                                    {/if}
-                                </p>
-                                <p>Recommendation Score: {rec.recommendationScore?.toFixed(2) || '0.00'}</p>
-                                <p class="reason">Reason: {rec.reason}</p>
-                                <button 
-                                    class="draft-button" 
-                                    on:click={() => draftPlayer(rec)}
-                                >
-                                    Draft Player
-                                </button>
-                            </div>
-                        {/each}
-                    </div>
-                </div>
-
-        <div class="roster-status">
-            <h3>Current Roster</h3>
-            <div class="roster-grid">
-                <!-- Offense -->
+    <div class="roster-status">
+        <h3>Roster Status</h3>
+        <div class="roster-grid">
+            {#each Object.keys(POSITION_GROUPS) as group (group)}
+            {@const typedGroup = group as PositionGroup} 
                 <div class="position-group">
-                    <h4>Offense</h4>
+                    <h4>{group}</h4>
                     <div class="positions">
-                        {#each POSITION_GROUPS['Offense'] as position}
-                            {@const req = rosterRequirements.find(r => r.position === position)}
-                            {#if req}
-                                <div class="roster-position" 
-                                     class:fulfilled={(currentRosterCounts[position] || 0) >= req.minimumPlayers}
-                                     class:at-max={(currentRosterCounts[position] || 0) >= req.maximumPlayers}>
-                                    <span class="position-label">{position}</span>
-                                    <div class="roster-counts">
-                                        <span class="count">
-                                            {currentRosterCounts[position] || 0}/{req.maximumPlayers}
-                                        </span>
-                                        {#if (currentRosterCounts[position] || 0) < req.minimumPlayers}
-                                            <span class="warning">
-                                                Need {req.minimumPlayers - (currentRosterCounts[position] || 0)} more
-                                            </span>
-                                        {/if}
-                                    </div>
-                                </div>
-                            {/if}
-                        {/each}
-                    </div>
-                </div>
-        
-                <!-- Defense -->
-                <div class="position-group">
-                    <h4>Defense</h4>
-                    <div class="positions">
-                        {#each POSITION_GROUPS['Defense'] as position}
+                        {#each POSITION_GROUPS[typedGroup] as position}
                             {@const req = rosterRequirements.find(r => r.position === position)}
                             {#if req}
                                 <div class="roster-position"
@@ -699,31 +673,17 @@
                                             </span>
                                         {/if}
                                     </div>
-                                </div>
-                            {/if}
-                        {/each}
-                    </div>
-                </div>
-        
-                <!-- Special Teams -->
-                <div class="position-group">
-                    <h4>Special Teams</h4>
-                    <div class="positions">
-                        {#each POSITION_GROUPS['Special Teams'] as position}
-                            {@const req = rosterRequirements.find(r => r.position === position)}
-                            {#if req}
-                                <div class="roster-position"
-                                     class:fulfilled={(currentRosterCounts[position] || 0) >= req.minimumPlayers}
-                                     class:at-max={(currentRosterCounts[position] || 0) >= req.maximumPlayers}>
-                                    <span class="position-label">{position}</span>
-                                    <div class="roster-counts">
-                                        <span class="count">
-                                            {currentRosterCounts[position] || 0}/{req.maximumPlayers}
-                                        </span>
-                                        {#if (currentRosterCounts[position] || 0) < req.minimumPlayers}
-                                            <span class="warning">
-                                                Need {req.minimumPlayers - (currentRosterCounts[position] || 0)} more
-                                            </span>
+                                    <div class="drafted-list">
+                                        {#if getDraftedPlayersByGroup()[typedGroup]?.[position]?.length}
+                                            {#each getDraftedPlayersByGroup()[typedGroup][position] as dp}
+                                                <div class="drafted-player">
+                                                    <div class="player-name">{dp.player.firstName} {dp.player.lastName}</div>
+                                                    <div class="player-rating">OVR: {dp.player.ratings[0]?.overallRating}</div>
+                                                    <div class="player-pick">R{dp.round}P{dp.pick}</div>
+                                                </div>
+                                            {/each}
+                                        {:else}
+                                            <div class="empty-position">-</div>
                                         {/if}
                                     </div>
                                 </div>
@@ -731,96 +691,17 @@
                         {/each}
                     </div>
                 </div>
-            </div>
+            {/each}
         </div>
+    </div>
 
-        <div class="draft-status-container">
-            <div class="drafted-players">
-                <h3>Drafted Players</h3>
-                {#if draftedPlayers.length > 0}
-                    <div class="needs-grid">
-                        <!-- Offense -->
-                        <div class="position-group">
-                            <h4>Offense</h4>
-                            <div class="positions">
-                                {#each POSITION_GROUPS['Offense'] as position}
-                                    <div class="drafted-position">
-                                        <span class="position-label">{position}</span>
-                                        <div class="drafted-list">
-                                            {#if getDraftedPlayersByGroup()['Offense']?.[position]?.length}
-                                                {#each getDraftedPlayersByGroup()['Offense'][position] as dp}
-                                                    <div class="drafted-player">
-                                                        <div class="player-name">{dp.player.firstName} {dp.player.lastName}</div>
-                                                        <div class="player-rating">OVR: {dp.player.ratings[0]?.overallRating}</div>
-                                                        <div class="player-pick">R{dp.round}P{dp.pick}</div>
-                                                    </div>
-                                                {/each}
-                                            {:else}
-                                                <div class="empty-position">-</div>
-                                            {/if}
-                                        </div>
-                                    </div>
-                                {/each}
-                            </div>
-                        </div>
-        
-                        <!-- Defense -->
-                        <div class="position-group">
-                            <h4>Defense</h4>
-                            <div class="positions">
-                                {#each POSITION_GROUPS['Defense'] as position}
-                                    <div class="drafted-position">
-                                        <span class="position-label">{position}</span>
-                                        <div class="drafted-list">
-                                            {#if getDraftedPlayersByGroup()['Defense']?.[position]?.length}
-                                                {#each getDraftedPlayersByGroup()['Defense'][position] as dp}
-                                                    <div class="drafted-player">
-                                                        <div class="player-name">{dp.player.firstName} {dp.player.lastName}</div>
-                                                        <div class="player-rating">OVR: {dp.player.ratings[0]?.overallRating}</div>
-                                                        <div class="player-pick">R{dp.round}P{dp.pick}</div>
-                                                    </div>
-                                                {/each}
-                                            {:else}
-                                                <div class="empty-position">-</div>
-                                            {/if}
-                                        </div>
-                                    </div>
-                                {/each}
-                            </div>
-                        </div>
-        
-                        <!-- Special Teams -->
-                        <div class="position-group">
-                            <h4>Special Teams</h4>
-                            <div class="positions">
-                                {#each POSITION_GROUPS['Special Teams'] as position}
-                                    <div class="drafted-position">
-                                        <span class="position-label">{position}</span>
-                                        <div class="drafted-list">
-                                            {#if getDraftedPlayersByGroup()['Special Teams']?.[position]?.length}
-                                                {#each getDraftedPlayersByGroup()['Special Teams'][position] as dp}
-                                                    <div class="drafted-player">
-                                                        <div class="player-name">{dp.player.firstName} {dp.player.lastName}</div>
-                                                        <div class="player-rating">OVR: {dp.player.ratings[0]?.overallRating}</div>
-                                                        <div class="player-pick">R{dp.round}P{dp.pick}</div>
-                                                    </div>
-                                                {/each}
-                                            {:else}
-                                                <div class="empty-position">-</div>
-                                            {/if}
-                                        </div>
-                                    </div>
-                                {/each}
-                            </div>
-                        </div>
-                    </div>
-                    <button class="undo-button" on:click={undoLastPick}>Undo Last Pick</button>
-                {:else}
-                    <p class="no-players">No players drafted yet</p>
-                {/if}
-            </div>
-        </div>
-    {/if}
+    <div class="draft-status-container">
+        <button class="undo-button" on:click={undoLastPick}>Undo Last Pick</button>
+        {#if draftedPlayers.length === 0}
+            <p class="no-players">No players drafted yet</p>
+        {/if}
+    </div>
+{/if}
 
     {#if error}
         <div class="error">
