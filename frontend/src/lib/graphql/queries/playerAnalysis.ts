@@ -1,33 +1,29 @@
 import { gql } from '@apollo/client/core';
 
 export const GET_PLAYERS_WITH_ANALYSIS = gql`
-    query GetPlayersWithAnalysis {
-        players {
-            id
-            firstName
-            lastName
-            age
-            position {
-                name
-            }
-            ratings {
-                overall
-            }
-            analysis {
-                bestPosition
-                normalizedScore
-                topPositions {
-                    position
-                    score
-                }
-                viablePositionCount
-                primaryArchetype
-                secondaryArchetype
-                specialTraits
-                versatilePositions
-            }
-        }
+  query GetPlayersWithAnalysis {
+    players {
+      id
+      firstName
+      lastName
+      age
+      position {
+        name
+      }
+      ratings {
+        overall  # Changed from overallRating to overall
+      }
+      analysis {
+        bestPosition
+        normalizedScore
+        positionScores
+        primaryArchetype
+        secondaryArchetype
+        specialTraits
+        versatilePositions
+      }
     }
+  }
 `;
 
 // For a single player with more detail:

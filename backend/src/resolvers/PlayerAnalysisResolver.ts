@@ -1,8 +1,9 @@
-import { Resolver, Query, Mutation, Arg, Int } from 'type-graphql';
+import { Resolver, Query, Mutation, Arg, Int, FieldResolver, Root, Float } from 'type-graphql';
 import { Service } from 'typedi';
 import { PlayerAnalysis } from '../entities/PlayerAnalysis';
 import { PlayerAnalysisService } from '../services/PlayerAnalysisService';
 import { CreatePlayerAnalysisInput, UpdatePlayerAnalysisInput } from '../inputs/PlayerAnalysisInput';
+import { GraphQLJSONObject } from 'graphql-type-json';
 
 @Service()
 @Resolver(of => PlayerAnalysis)
@@ -52,11 +53,13 @@ export class PlayerAnalysisResolver {
 
     @Mutation(() => Boolean)
     async analyzeAllPlayers(): Promise<boolean> {
+        console.log('analyzeAllPlayers mutation called');
         try {
             await this.analysisService.analyzeAllPlayers();
+            console.log('Analysis completed successfully');
             return true;
         } catch (error) {
-            console.error('Error analyzing players:', error);
+            console.error('Error in analyzeAllPlayers mutation:', error);
             return false;
         }
     }
@@ -66,5 +69,15 @@ export class PlayerAnalysisResolver {
         @Arg('playerId') playerId: number
     ): Promise<PlayerAnalysis> {
         return this.analysisService.analyzePlayer(playerId);
+    }
+
+    @FieldResolver(() => Float)  // Add this decorator if not present
+    async normalizedScore(@Root() analysis: PlayerAnalysis): Promise<number> {
+        return analysis.normalizedScore;
+    }
+
+    @FieldResolver(() => GraphQLJSONObject)
+    async positionScores(@Root() analysis: PlayerAnalysis): Promise<Record<string, number>> {
+        return analysis.positionScores || {};
     }
 }

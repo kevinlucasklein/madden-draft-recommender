@@ -235,4 +235,12 @@ export class PlayerStats {
     @Field(() => Float, { nullable: true })
     @Column({ name: 'zone_coverage', type: 'float', nullable: true })
     zoneCoverage?: number;
-}
+
+    // Add the index signature directly to the class
+    [key: string]: number | string | Player | PlayerRating | undefined;
+
+    }
+
+    export interface PlayerStatsIndexed extends PlayerStats {
+        [key: string]: number | string | Player | PlayerRating | undefined;
+    }

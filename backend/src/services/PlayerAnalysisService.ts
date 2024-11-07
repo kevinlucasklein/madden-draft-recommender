@@ -6,7 +6,9 @@ import { RedisService } from './RedisService';
 import { CreatePlayerAnalysisInput, UpdatePlayerAnalysisInput } from '../inputs/PlayerAnalysisInput';
 import { POSITION_STAT_WEIGHTS, POSITION_THRESHOLDS, determinePlayerArchetype } from '../config/positionStats';
 import { Player } from '../entities/Player';
-import { PlayerStats } from '../entities/PlayerStats';
+import { PlayerStats, PlayerStatsIndexed } from '../entities/PlayerStats';
+import fs from 'fs';
+import path from 'path';
 
 
 type StatWeight = {
@@ -17,8 +19,19 @@ type PositionWeights = {
     [key: string]: StatWeight;
 };
 
-type PositionThresholds = {
-    [key: string]: StatWeight;
+// Define interfaces for our types
+interface PositionThreshold {
+    minWeight: number;
+    maxWeight?: number;  // Optional for positions like DT that only have min
+    penalty: number;
+}
+
+type PositionAgeFactor = {
+    QB: number;
+    K: number;
+    P: number;
+    RB: number;
+    FB: number;
 };
 
 interface PlayerArchetype {
@@ -34,12 +47,44 @@ export class PlayerAnalysisService {
     private playerRepository: Repository<Player>;
     private redisService: RedisService;
     private statsRepository: Repository<PlayerStats>;
+    private logFile: string;
 
     constructor() {
         this.analysisRepository = AppDataSource.getRepository(PlayerAnalysis);
         this.playerRepository = AppDataSource.getRepository(Player);
         this.redisService = RedisService.getInstance();
         this.statsRepository = AppDataSource.getRepository(PlayerStats);
+        
+        // Use absolute path from project root
+        const projectRoot = path.resolve(__dirname, '../../');
+        const logsDir = path.join(projectRoot, 'logs');
+        
+        try {
+            if (!fs.existsSync(logsDir)) {
+                fs.mkdirSync(logsDir, { recursive: true });
+            }
+            this.logFile = path.join(logsDir, 'player-analysis.log');
+            
+            // Test write access
+            fs.appendFileSync(this.logFile, `Service initialized at ${new Date().toISOString()}\n`);
+            console.log(`Logging to: ${this.logFile}`);
+        } catch (error) {
+            console.error('Error setting up log file:', error);
+            // Fallback to console logging if file logging fails
+            this.log = (message: string) => console.log(`[PlayerAnalysis] ${message}`);
+        }
+    }
+
+    private log(message: string) {
+        const timestamp = new Date().toISOString();
+        const logMessage = `${timestamp}: ${message}\n`;
+        
+        try {
+            fs.appendFileSync(this.logFile, logMessage);
+        } catch (error) {
+            console.log(`[PlayerAnalysis] ${message}`);
+            console.error('Error writing to log file:', error);
+        }
     }
 
     private async clearAnalysisCache(id?: number, playerId?: number) {
@@ -53,106 +98,222 @@ export class PlayerAnalysisService {
     }
 
     
-    private calculatePositionScore(stats: PlayerStats, position: keyof typeof POSITION_STAT_WEIGHTS): number {
-        const weights = POSITION_STAT_WEIGHTS[position] as StatWeight;
-        if (!weights) return 0;
+    private calculatePositionScore(
+        stats: PlayerStatsIndexed, 
+        position: keyof typeof POSITION_STAT_WEIGHTS, 
+        player: Player
+    ): number {
+        const weights = POSITION_STAT_WEIGHTS[position];
+        if (!weights) {
+            this.log(`No weights found for position: ${position}`);
+            return 0;
+        }
     
         let totalScore = 0;
         let totalWeight = 0;
+        const missingStats: string[] = [];
     
-        // Calculate weighted score for each stat
+        // Calculate base score
         for (const [stat, weight] of Object.entries(weights)) {
-            const statValue = stats[stat as keyof PlayerStats];
-            if (typeof statValue === 'number' && typeof weight === 'number') {
+            const statValue = stats[stat];
+            if (typeof statValue === 'number') {  // Only use number values
                 totalScore += statValue * weight;
                 totalWeight += weight;
+            } else {
+                missingStats.push(stat);
             }
         }
     
-        // Normalize score to 0-100 scale
-        const normalizedScore = totalWeight > 0 ? (totalScore / totalWeight) : 0;
+        let score = totalWeight > 0 ? (totalScore / totalWeight) : 0;
     
-        // Apply position-specific thresholds
-        const thresholds = POSITION_THRESHOLDS[position] as StatWeight;
-        if (thresholds) {
-            for (const [stat, threshold] of Object.entries(thresholds)) {
-                const statValue = stats[stat as keyof PlayerStats];
-                if (typeof statValue === 'number' && typeof threshold === 'number' && statValue < threshold) {
-                    return 0; // Player doesn't meet minimum requirements
-                }
+        // Apply body type adjustments
+        const threshold = POSITION_THRESHOLDS[position] as PositionThreshold;
+        if (threshold && player.weight) {
+            let shouldPenalize = false;
+            
+            if (threshold.minWeight && player.weight < threshold.minWeight) {
+                shouldPenalize = true;
+                this.log(`${player.firstName} ${player.lastName} too light for ${position}: ${player.weight} < ${threshold.minWeight}`);
+            }
+            
+            if ('maxWeight' in threshold && threshold.maxWeight && player.weight > threshold.maxWeight) {
+                shouldPenalize = true;
+                this.log(`${player.firstName} ${player.lastName} too heavy for ${position}: ${player.weight} > ${threshold.maxWeight}`);
+            }
+    
+            if (shouldPenalize) {
+                score *= (1 - threshold.penalty);
+                this.log(`Applied ${threshold.penalty * 100}% penalty to ${position} score for ${player.firstName} ${player.lastName}`);
             }
         }
     
-        return normalizedScore;
+        return score;
+    }
+
+    private calculateAgeAdjustedScore(rawScore: number, age: number, position: string): number {
+        const AGE_MODIFIERS = {
+            YOUNG_PROSPECT: { maxAge: 23, modifier: 1.08 },
+            DEVELOPING: { maxAge: 26, modifier: 1.04 },
+            PRIME: { maxAge: 29, modifier: 1.0 },
+            VETERAN: { maxAge: 32, modifier: 0.97 },
+            AGING: { maxAge: 35, modifier: 0.94 },
+            TWILIGHT: { maxAge: Infinity, modifier: 0.90 }
+        };
+    
+        // Type the position factors
+        const POSITION_AGE_FACTORS: PositionAgeFactor = {
+            QB: 1.03,
+            K: 1.03,
+            P: 1.03,
+            RB: 0.97,
+            FB: 0.97,
+        };
+    
+        // Get age modifier
+        let modifier = AGE_MODIFIERS.TWILIGHT.modifier;
+        for (const bracket of Object.values(AGE_MODIFIERS)) {
+            if (age <= bracket.maxAge) {
+                modifier = bracket.modifier;
+                break;
+            }
+        }
+    
+        // Type-safe position factor lookup
+        const positionFactor = (POSITION_AGE_FACTORS as Record<string, number>)[position] || 1.0;
+        const finalModifier = modifier * positionFactor;
+    
+        return rawScore * finalModifier;
     }
 
     async analyzePlayer(playerId: number): Promise<PlayerAnalysis> {
-        const player = await this.playerRepository.findOne({
-            where: { id: playerId },
-            relations: ['stats']
-        });
+        const player = await this.playerRepository
+            .createQueryBuilder('player')
+            .leftJoinAndSelect('player.ratings', 'ratings')
+            .leftJoinAndSelect('ratings.position', 'position')
+            .leftJoinAndSelect('player.stats', 'stats')
+            .where('player.id = :id', { id: playerId })
+            .getOne();
     
-        if (!player || !player.stats || player.stats.length === 0) {
-            throw new Error('Player or stats not found');
+        if (!player) {
+            throw new Error('Player not found');
         }
     
-        // Get the most recent stats
+        if (!player.ratings?.[0]?.position) {  // Check position through ratings
+            throw new Error(`No position found for player ${playerId}`);
+        }
+    
+        if (!player.stats || player.stats.length === 0) {
+            throw new Error(`No stats found for player ${playerId}`);
+        }
+    
         const currentStats = player.stats[player.stats.length - 1];
     
         // Calculate scores for each position
+        // Now this should work without type errors
         const positionScores: Record<string, number> = {};
         for (const position of Object.keys(POSITION_STAT_WEIGHTS)) {
-            positionScores[position] = this.calculatePositionScore(
+            const score = this.calculatePositionScore(
                 currentStats, 
-                position as keyof typeof POSITION_STAT_WEIGHTS
+                position as keyof typeof POSITION_STAT_WEIGHTS,
+                player
             );
+            positionScores[position] = score;
         }
-
-        // Sort positions by score and get top positions
+        
         const sortedPositions = Object.entries(positionScores)
             .sort(([, scoreA], [, scoreB]) => scoreB - scoreA)
             .map(([position, score]) => ({
                 position,
-                score: Math.round(score * 100) / 100 // Round to 2 decimal places
+                score
             }));
-
-        const bestPosition = sortedPositions[0].position;
-        const topPositions = sortedPositions.filter(pos => pos.score > 50); // Only keep viable positions
-
-        const archetype = determinePlayerArchetype(currentStats, bestPosition);
-
-        // Create or update analysis
-        const analysis = await this.findByPlayer(playerId) || this.analysisRepository.create({
-            player: { id: playerId }
-        });
         
+        const bestPosition = sortedPositions[0].position;
+        // Use the score directly from positionScores to maintain precision
+        const bestScore = positionScores[bestPosition];
+        
+        const topPositions = sortedPositions.filter(pos => 
+            pos.score > Math.max(50, bestScore * 0.75)
+        );
+
+        this.log(`Best position: ${bestPosition} (${bestScore})`);
+        this.log(`Viable positions: ${topPositions.map(p => `${p.position}:${p.score}`).join(', ')}`);
+    
+        const archetype = determinePlayerArchetype(currentStats, bestPosition);
+    
+        // Create or update analysis
+        let analysis = await this.findByPlayer(playerId);
+        if (!analysis) {
+            analysis = this.analysisRepository.create({
+                player: { id: playerId }
+            });
+        }
+    
         Object.assign(analysis, {
             positionScores,
             bestPosition,
-            normalizedScore: sortedPositions[0].score,
+            normalizedScore: bestScore,
             primaryArchetype: archetype.primaryType,
             secondaryArchetype: archetype.secondaryType,
             versatilePositions: archetype.versatility,
             specialTraits: archetype.specialTraits,
-            topPositions: topPositions, // Add sorted positions array
+            topPositions,
             viablePositionCount: topPositions.length
         });
-        
-        const saved = await this.analysisRepository.save(analysis);
-        await this.clearAnalysisCache(analysis.id, playerId);
-        return saved;
+    
+        try {
+            const saved = await this.analysisRepository.save(analysis);
+            await this.clearAnalysisCache(analysis.id, playerId);
+            return saved;
+        } catch (error) {
+            console.error(`Error saving analysis for player ${playerId}:`, error);
+            throw error;
+        }
     }
 
     async analyzeAllPlayers(): Promise<void> {
-        const players = await this.playerRepository.find();
-        
-        for (const player of players) {
-            try {
-                console.log(`Analyzing player ${player.id}: ${player.firstName} ${player.lastName}`);
-                await this.analyzePlayer(player.id);
-            } catch (error) {
-                console.error(`Error analyzing player ${player.id}:`, error);
+        try {
+            // Clear the log file before starting
+            fs.writeFileSync(this.logFile, '');
+            console.log('Starting analysis of all players...');
+            
+            // Update the relations to match your entity structure
+            const players = await this.playerRepository
+                .createQueryBuilder('player')
+                .leftJoinAndSelect('player.ratings', 'ratings')
+                .leftJoinAndSelect('ratings.position', 'position')  // Join through ratings
+                .leftJoinAndSelect('player.stats', 'stats')
+                .getMany();
+            
+            this.log(`Found ${players.length} players to analyze`);
+            console.log(`Found ${players.length} players to analyze`);
+            
+            for (const player of players) {
+                try {
+                    console.log(`Analyzing player ${player.id}: ${player.firstName} ${player.lastName}`);
+                    await this.analyzePlayer(player.id);
+                } catch (err) {
+                    const error = err as Error;
+                    this.log(`Error analyzing player ${player.id}: ${error.message}`);
+                    console.error(`Error analyzing player ${player.id}:`, error);
+                }
+                await new Promise(resolve => setTimeout(resolve, 100));
             }
+        
+            // Update ranks after all analyses are complete
+            try {
+                await this.updateRanks();
+                this.log('Ranks updated successfully');
+            } catch (err) {
+                const error = err as Error;
+                this.log(`Error updating ranks: ${error.message}`);
+                console.error('Error updating ranks:', error);
+            }
+            
+            this.log('Analysis complete');
+            console.log('Analysis complete');
+        } catch (error) {
+            console.error('Error in analyzeAllPlayers:', error);
+            throw error;
         }
     }
 

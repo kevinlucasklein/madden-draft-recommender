@@ -5,8 +5,17 @@ import { AppDataSource } from '../config/database';
 import { RedisService } from './RedisService';
 import { CreatePlayerInput, UpdatePlayerInput } from '../inputs/PlayerInput';
 import { PlayerStatsService } from './PlayerStatsService';
+import { PlayerStats } from '../entities/PlayerStats';
 
 import { MoreThan } from 'typeorm';
+
+interface CachedPlayerStats extends Omit<PlayerStats, 'player'> {
+    player_id: number;
+}
+
+interface CachedPlayer extends Omit<Player, 'stats'> {
+    stats?: CachedPlayerStats[];
+}
 
 @Service()
 export class PlayerService {
@@ -28,14 +37,34 @@ export class PlayerService {
         await this.redisService.del('players:all');
     }
 
+    private transformPlayerForCache(player: Player): CachedPlayer {
+        const { stats, ...playerBase } = player;
+        return {
+            ...playerBase,
+            stats: stats?.map(stat => {
+                const { player, ...statWithoutPlayer } = stat;
+                return {
+                    ...statWithoutPlayer,
+                    player_id: player.id
+                };
+            })
+        };
+    }
+
     async findAll(): Promise<Player[]> {
         try {
             const cacheKey = 'players:all';
-            const cached = await this.redisService.get<Player[]>(cacheKey);
+            const cached = await this.redisService.get<CachedPlayer[]>(cacheKey);
             
             if (cached) {
-                console.log('Returning cached players data');
-                return cached;
+                // Transform cached data back to Player type
+                return cached.map(cachedPlayer => ({
+                    ...cachedPlayer,
+                    stats: cachedPlayer.stats?.map(stat => ({
+                        ...stat,
+                        player: { id: stat.player_id } as Player
+                    }))
+                })) as Player[];
             }
 
             console.log('Fetching players from database');
@@ -54,20 +83,19 @@ export class PlayerService {
                     .addOrderBy('ratings.id', 'DESC')
                     .getMany(),
                 
-                // Get all stats in a single query
                 this.statsService.findAllLatestStats()
             ]);
 
-            // Create a map for quick stats lookup
             const statsMap = new Map(allStats.map(stats => [stats.player_id, stats]));
 
             // Combine the data in memory
-            for (const player of players) {
+            const playersWithStats = players.map(player => {
                 const playerStats = statsMap.get(player.id);
                 if (playerStats) {
                     player.stats = [{
                         id: playerStats.stat_id,
-                        player: player,
+                        // Create a proper Player reference
+                        player: { id: player.id } as Player,  // Cast as Player type
                         speed: playerStats.speed,
                         acceleration: playerStats.acceleration,
                         agility: playerStats.agility,
@@ -124,10 +152,13 @@ export class PlayerService {
                         zoneCoverage: playerStats.zone_coverage
                     }];
                 }
-            }
+                return player;
+            });
 
-            await this.redisService.set(cacheKey, players);
-            return players;
+            const transformedPlayers = playersWithStats.map(player => this.transformPlayerForCache(player));
+            await this.redisService.set(cacheKey, transformedPlayers);
+            
+            return playersWithStats;
         } catch (error) {
             console.error('Error in findAll:', error);
             throw error;
@@ -159,7 +190,9 @@ export class PlayerService {
             });
 
             if (player) {
-                await this.redisService.set(cacheKey, player);
+                // Transform before caching
+                const transformedPlayer = this.transformPlayerForCache(player);
+                await this.redisService.set(cacheKey, transformedPlayer);
             }
             return player;
         } catch (error) {

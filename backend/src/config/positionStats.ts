@@ -1,192 +1,294 @@
+// Define the interface first
+interface PositionThreshold {
+  minWeight: number;
+  maxWeight?: number;  // Optional for positions that only have min
+  penalty: number;
+}
+
+export const POSITION_THRESHOLDS: Record<keyof typeof POSITION_STAT_WEIGHTS, PositionThreshold> = {
+  QB: { 
+      minWeight: 200, 
+      maxWeight: 250, 
+      penalty: 0.25 
+  },
+  HB: { 
+      minWeight: 190, 
+      maxWeight: 230, 
+      penalty: 0.25 
+  },
+  FB: { 
+      minWeight: 230, 
+      maxWeight: 265, 
+      penalty: 0.25 
+  },
+  WR: { 
+      minWeight: 175, 
+      maxWeight: 215, 
+      penalty: 0.30 
+  },
+  TE: { 
+      minWeight: 235, 
+      maxWeight: 270, 
+      penalty: 0.25 
+  },
+  LT: { 
+      minWeight: 290, 
+      maxWeight: 340, 
+      penalty: 0.20 
+  },
+  RT: { 
+      minWeight: 290, 
+      maxWeight: 340, 
+      penalty: 0.20 
+  },
+  LG: { 
+      minWeight: 290, 
+      maxWeight: 340, 
+      penalty: 0.20 
+  },
+  RG: { 
+      minWeight: 290, 
+      maxWeight: 340, 
+      penalty: 0.20 
+  },
+  C: { 
+      minWeight: 290, 
+      maxWeight: 340, 
+      penalty: 0.20 
+  },
+  DE: { 
+      minWeight: 250, 
+      maxWeight: 290, 
+      penalty: 0.15 
+  },
+  DT: { 
+      minWeight: 285, 
+      maxWeight: 340,
+      penalty: 0.20 
+  },
+  MLB: { 
+      minWeight: 230, 
+      maxWeight: 255, 
+      penalty: 0.20 
+  },
+  LOLB: {  // Added LOLB
+      minWeight: 230, 
+      maxWeight: 255, 
+      penalty: 0.20 
+  },
+  ROLB: {  // Added ROLB
+      minWeight: 230, 
+      maxWeight: 255, 
+      penalty: 0.20 
+  },
+  CB: { 
+      minWeight: 175, 
+      maxWeight: 205, 
+      penalty: 0.30 
+  },
+  FS: { 
+      minWeight: 180, 
+      maxWeight: 210, 
+      penalty: 0.25 
+  },
+  SS: { 
+      minWeight: 190, 
+      maxWeight: 220, 
+      penalty: 0.25 
+  },
+  K: { 
+      minWeight: 170, 
+      maxWeight: 220, 
+      penalty: 0.15 
+  },
+  P: { 
+      minWeight: 170, 
+      maxWeight: 220, 
+      penalty: 0.15 
+  }
+} as const;
+
 export const POSITION_STAT_WEIGHTS = {
   QB: {
     throwPower: 1.0,
-    throwAccuracyShort: 0.9,
-    throwAccuracyMid: 0.9,
-    throwAccuracyDeep: 0.8,
-    throwOnTheRun: 0.7,
-    awareness: 0.8,
-    playAction: 0.6,
-    throwUnderPressure: 0.7,
-    breakSack: 0.5,
-    speed: 0.4,
-    acceleration: 0.4,
-    agility: 0.4,
-    strength: 0.3,
+    throwAccuracyShort: 1.0,
+    throwAccuracyMid: 1.0,
+    throwAccuracyDeep: 0.9,
+    throwOnTheRun: 0.9,     // Increased for mobility
+    throwUnderPressure: 0.9, // Increased for pressure
+    playAction: 0.7,
+    breakSack: 0.7,         // Increased for escapability
+    speed: 0.6,             // Increased for scrambling
+    acceleration: 0.6,
+    agility: 0.5,
   },
-  RB: {
+  HB: {
     speed: 1.0,
-    acceleration: 0.9,
+    acceleration: 1.0,
     agility: 0.9,
-    carrying: 0.8,
-    breakTackle: 0.8,
-    bcvision: 0.7,
-    trucking: 0.6,
-    stiffArm: 0.5,
-    jukeMove: 0.7,
-    spinMove: 0.7,
-    catching: 0.4,
-    strength: 0.5,
-    stamina: 0.6,
+    breakTackle: 0.9,
+    carrying: 0.9,
+    changeOfDirection: 0.9,  // Increased for cuts
+    trucking: 0.8,          // Increased for power running
+    jukeMove: 0.8,
+    spinMove: 0.8,
+    stiffArm: 0.7,
+    catching: 0.6,          // Increased for receiving backs
+    bcvision: 0.6,
+    stamina: 0.5,           // Added for endurance
   },
   FB: {
     leadBlock: 1.0,
-    impactBlocking: 0.9,
-    runBlock: 0.8,
-    strength: 0.8,
-    awareness: 0.7,
-    carrying: 0.6,
-    catching: 0.5,
-    speed: 0.4,
-    acceleration: 0.4,
-    trucking: 0.5,
-    stamina: 0.6,
+    impactBlocking: 1.0,
+    runBlock: 0.9,
+    strength: 0.9,          // Increased
+    carrying: 0.7,          // Increased for FB dives
+    trucking: 0.7,          // Increased
+    catching: 0.6,          // Increased for passing plays
+    speed: 0.5,             // Increased
   },
   WR: {
     speed: 1.0,
-    acceleration: 0.9,
+    acceleration: 1.0,
     agility: 0.9,
-    catching: 0.9,
-    shortRouteRunning: 0.8,
-    mediumRouteRunning: 0.8,
-    deepRouteRunning: 0.8,
-    release: 0.7,
-    catchInTraffic: 0.7,
-    spectacularCatch: 0.6,
-    jumping: 0.6,
-    awareness: 0.6,
-    stamina: 0.5,
+    catching: 1.0,          // Increased to max
+    release: 0.9,
+    shortRouteRunning: 0.9,
+    mediumRouteRunning: 0.9,
+    deepRouteRunning: 0.9,
+    catchInTraffic: 0.8,
+    spectacularCatch: 0.8,
+    changeOfDirection: 0.8,
+    jumping: 0.7,
+    stamina: 0.5,           // Added for long games
   },
   TE: {
-    catching: 0.9,
-    runBlock: 0.8,
+    catching: 1.0,
+    runBlock: 0.9,
     strength: 0.8,
-    shortRouteRunning: 0.7,
-    mediumRouteRunning: 0.7,
-    catchInTraffic: 0.8,
-    impactBlocking: 0.7,
-    speed: 0.6,
-    acceleration: 0.6,
-    awareness: 0.7,
-    stamina: 0.6,
+    shortRouteRunning: 0.9,  // Increased
+    mediumRouteRunning: 0.9, // Increased
+    catchInTraffic: 0.9,     // Increased
+    speed: 0.8,              // Increased
+    acceleration: 0.8,
+    impactBlocking: 0.8,
+    stamina: 0.5,            // Added
   },
   LT: {
     passBlock: 1.0,
-    passBlockPower: 0.9,
+    passBlockPower: 1.0,
     passBlockFinesse: 0.9,
+    strength: 0.9,
     runBlock: 0.8,
     runBlockPower: 0.8,
     runBlockFinesse: 0.8,
-    strength: 0.8,
-    awareness: 0.7,
-    agility: 0.6,
-    acceleration: 0.5,
+    agility: 0.7,
+    acceleration: 0.6,
   },
   RT: {
     passBlock: 1.0,
-    passBlockPower: 0.9,
+    passBlockPower: 1.0,
     passBlockFinesse: 0.9,
+    strength: 0.9,
     runBlock: 0.8,
     runBlockPower: 0.8,
     runBlockFinesse: 0.8,
-    strength: 0.8,
-    awareness: 0.7,
-    agility: 0.6,
-    acceleration: 0.5,
+    agility: 0.7,
+    acceleration: 0.6,
   },
   LG: {
     runBlock: 1.0,
-    runBlockPower: 0.9,
+    runBlockPower: 1.0,
     runBlockFinesse: 0.9,
+    strength: 0.9,
     passBlock: 0.8,
     passBlockPower: 0.8,
     passBlockFinesse: 0.8,
-    strength: 0.8,
-    awareness: 0.7,
     agility: 0.6,
-    acceleration: 0.5,
   },
   RG: {
     runBlock: 1.0,
-    runBlockPower: 0.9,
+    runBlockPower: 1.0,
     runBlockFinesse: 0.9,
+    strength: 0.9,
     passBlock: 0.8,
     passBlockPower: 0.8,
     passBlockFinesse: 0.8,
-    strength: 0.8,
-    awareness: 0.7,
     agility: 0.6,
-    acceleration: 0.5,
   },
   C: {
-    awareness: 1.0,
-    runBlock: 0.9,
-    passBlock: 0.9,
-    strength: 0.8,
-    runBlockPower: 0.8,
-    passBlockPower: 0.8,
+    runBlock: 1.0,
+    passBlock: 1.0,
+    strength: 0.9,
+    runBlockPower: 0.9,
+    passBlockPower: 0.9,
     agility: 0.6,
-    acceleration: 0.5,
-    stamina: 0.7,
   },
   DE: {
+    speed: 1.0,
+    acceleration: 1.0,       // Increased to max
     powerMoves: 0.9,
     finesseMoves: 0.9,
     blockShedding: 0.9,
     strength: 0.8,
-    pursuit: 0.8,
-    playRecognition: 0.7,
+    pursuit: 0.8,            // Increased
     tackle: 0.7,
-    speed: 0.6,
-    acceleration: 0.7,
-    awareness: 0.6,
+    stamina: 0.6,           // Added for pass rush
   },
   DT: {
     blockShedding: 1.0,
-    strength: 0.9,
+    strength: 1.0,
     powerMoves: 0.9,
-    tackle: 0.8,
+    speed: 0.9,             // Increased more
+    acceleration: 0.9,       // Increased more
+    tackle: 0.8,            // Increased
     pursuit: 0.7,
-    playRecognition: 0.7,
-    awareness: 0.6,
-    acceleration: 0.5,
-    stamina: 0.6,
+    stamina: 0.6,           // Added
   },
   MLB: {
-    tackle: 1.0,
-    playRecognition: 0.9,
-    pursuit: 0.9,
-    zoneCoverage: 0.8,
-    hitPower: 0.8,
-    blockShedding: 0.7,
-    speed: 0.7,
-    acceleration: 0.7,
-    awareness: 0.8,
-    stamina: 0.6,
-  },
-  OLB: {
+    speed: 1.0,
+    acceleration: 1.0,       // Increased to max
     tackle: 0.9,
-    playRecognition: 0.9,
     pursuit: 0.9,
-    zoneCoverage: 0.8,
     hitPower: 0.8,
-    blockShedding: 0.7,
-    speed: 0.8,
-    acceleration: 0.8,
-    awareness: 0.7,
-    stamina: 0.6,
+    zoneCoverage: 0.8,
+    blockShedding: 0.8,     // Increased
+    stamina: 0.6,           // Added
+  },
+  LOLB: {
+    speed: 1.0,
+    acceleration: 1.0,      // Increased to max
+    tackle: 0.9,
+    pursuit: 0.9,
+    hitPower: 0.8,
+    blockShedding: 0.8,
+    zoneCoverage: 0.7,
+    finesseMoves: 0.7,     // Added for pass rush
+    powerMoves: 0.7,       // Added for pass rush
+    stamina: 0.6,          // Added
+  },
+  ROLB: {
+    speed: 1.0,
+    acceleration: 1.0,      // Increased to max
+    tackle: 0.9,
+    pursuit: 0.9,
+    hitPower: 0.8,
+    blockShedding: 0.8,
+    zoneCoverage: 0.7,
+    finesseMoves: 0.7,     // Added for pass rush
+    powerMoves: 0.7,       // Added for pass rush
+    stamina: 0.6,          // Added
   },
   CB: {
     speed: 1.0,
-    acceleration: 0.9,
-    agility: 0.9,
-    manCoverage: 0.9,
-    zoneCoverage: 0.8,
-    press: 0.7,
-    playRecognition: 0.7,
-    jumping: 0.6,
-    awareness: 0.7,
-    tackle: 0.5,
+    acceleration: 1.0,
+    agility: 1.0,          // Increased to max
+    manCoverage: 1.0,      // Increased to max
+    zoneCoverage: 0.9,
+    press: 0.8,
+    jumping: 0.8,          // Increased
+    changeOfDirection: 0.8, // Added
+    stamina: 0.5,          // Added
   },
   FS: {
     zoneCoverage: 1.0,
@@ -196,7 +298,6 @@ export const POSITION_STAT_WEIGHTS = {
     pursuit: 0.8,
     tackle: 0.7,
     hitPower: 0.6,
-    awareness: 0.8,
     jumping: 0.6,
     stamina: 0.6,
   },
@@ -208,249 +309,16 @@ export const POSITION_STAT_WEIGHTS = {
     playRecognition: 0.8,
     pursuit: 0.8,
     tackle: 0.8,
-    awareness: 0.7,
     jumping: 0.6,
     stamina: 0.6,
   },
   K: {
     kickPower: 1.0,
     kickAccuracy: 0.9,
-    awareness: 0.5,
-    stamina: 0.3,
   },
   P: {
     kickPower: 1.0,
     kickAccuracy: 0.9,
-    awareness: 0.5,
-    stamina: 0.3,
-  },
-};
-
-export const POSITION_THRESHOLDS = {
-  QB: {
-    throwPower: 85,
-    throwAccuracyShort: 85,
-    throwAccuracyMid: 80,
-    throwAccuracyDeep: 75,
-    throwOnTheRun: 75,
-    awareness: 80,
-    playAction: 75,
-    throwUnderPressure: 75,
-    breakSack: 70,
-    speed: 65,
-    acceleration: 65,
-    agility: 65,
-    strength: 60,
-  },
-  RB: {
-    speed: 88,
-    acceleration: 88,
-    agility: 85,
-    carrying: 85,
-    breakTackle: 80,
-    bcvision: 80,
-    trucking: 75,
-    stiffArm: 75,
-    jukeMove: 80,
-    spinMove: 80,
-    catching: 70,
-    strength: 70,
-    stamina: 85,
-  },
-  FB: {
-    leadBlock: 85,
-    impactBlocking: 85,
-    runBlock: 80,
-    strength: 85,
-    awareness: 75,
-    carrying: 70,
-    catching: 65,
-    speed: 70,
-    acceleration: 70,
-    trucking: 75,
-    stamina: 80,
-  },
-  WR: {
-    speed: 88,
-    acceleration: 88,
-    agility: 85,
-    catching: 85,
-    shortRouteRunning: 80,
-    mediumRouteRunning: 80,
-    deepRouteRunning: 80,
-    release: 75,
-    catchInTraffic: 75,
-    spectacularCatch: 75,
-    jumping: 80,
-    awareness: 75,
-    stamina: 85,
-  },
-  TE: {
-    catching: 80,
-    runBlock: 75,
-    strength: 80,
-    shortRouteRunning: 75,
-    mediumRouteRunning: 75,
-    catchInTraffic: 80,
-    impactBlocking: 75,
-    speed: 75,
-    acceleration: 75,
-    awareness: 75,
-    stamina: 80,
-  },
-  LT: {
-    passBlock: 85,
-    passBlockPower: 85,
-    passBlockFinesse: 85,
-    runBlock: 80,
-    runBlockPower: 80,
-    runBlockFinesse: 80,
-    strength: 85,
-    awareness: 80,
-    agility: 75,
-    acceleration: 70,
-  },
-  RT: {
-    passBlock: 85,
-    passBlockPower: 85,
-    passBlockFinesse: 85,
-    runBlock: 80,
-    runBlockPower: 80,
-    runBlockFinesse: 80,
-    strength: 85,
-    awareness: 80,
-    agility: 75,
-    acceleration: 70,
-  },
-  LG: {
-    runBlock: 85,
-    runBlockPower: 85,
-    runBlockFinesse: 85,
-    passBlock: 80,
-    passBlockPower: 80,
-    passBlockFinesse: 80,
-    strength: 85,
-    awareness: 80,
-    agility: 75,
-    acceleration: 70,
-  },
-  RG: {
-    runBlock: 85,
-    runBlockPower: 85,
-    runBlockFinesse: 85,
-    passBlock: 80,
-    passBlockPower: 80,
-    passBlockFinesse: 80,
-    strength: 85,
-    awareness: 80,
-    agility: 75,
-    acceleration: 70,
-  },
-  C: {
-    awareness: 90,
-    runBlock: 85,
-    passBlock: 85,
-    strength: 85,
-    runBlockPower: 80,
-    passBlockPower: 80,
-    agility: 70,
-    acceleration: 65,
-    stamina: 80,
-  },
-  DE: {
-    powerMoves: 85,
-    finesseMoves: 85,
-    blockShedding: 85,
-    strength: 85,
-    pursuit: 80,
-    playRecognition: 75,
-    tackle: 80,
-    speed: 75,
-    acceleration: 80,
-    awareness: 75,
-  },
-  DT: {
-    blockShedding: 85,
-    strength: 90,
-    powerMoves: 85,
-    tackle: 80,
-    pursuit: 75,
-    playRecognition: 75,
-    awareness: 75,
-    acceleration: 70,
-    stamina: 80,
-  },
-  MLB: {
-    tackle: 85,
-    playRecognition: 85,
-    pursuit: 85,
-    zoneCoverage: 80,
-    hitPower: 80,
-    blockShedding: 75,
-    speed: 75,
-    acceleration: 80,
-    awareness: 85,
-    stamina: 85,
-  },
-  OLB: {
-    tackle: 85,
-    playRecognition: 85,
-    pursuit: 85,
-    zoneCoverage: 80,
-    hitPower: 80,
-    blockShedding: 75,
-    speed: 80,
-    acceleration: 85,
-    awareness: 80,
-    stamina: 85,
-  },
-  CB: {
-    speed: 90,
-    acceleration: 90,
-    agility: 85,
-    manCoverage: 85,
-    zoneCoverage: 80,
-    press: 75,
-    playRecognition: 75,
-    jumping: 80,
-    awareness: 75,
-    tackle: 70,
-  },
-  FS: {
-    zoneCoverage: 85,
-    speed: 85,
-    acceleration: 85,
-    playRecognition: 85,
-    pursuit: 80,
-    tackle: 75,
-    hitPower: 70,
-    awareness: 85,
-    jumping: 80,
-    stamina: 80,
-  },
-  SS: {
-    hitPower: 85,
-    zoneCoverage: 80,
-    speed: 80,
-    acceleration: 80,
-    playRecognition: 85,
-    pursuit: 85,
-    tackle: 85,
-    awareness: 80,
-    jumping: 75,
-    stamina: 85,
-  },
-  K: {
-    kickPower: 85,
-    kickAccuracy: 85,
-    awareness: 70,
-    stamina: 65,
-  },
-  P: {
-    kickPower: 85,
-    kickAccuracy: 85,
-    awareness: 70,
-    stamina: 65,
   },
 };
 
