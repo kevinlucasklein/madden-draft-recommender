@@ -300,7 +300,8 @@ type PlayerAnalysis {
   player: Player!
   playerType: String
   positionChangeRecommended: Boolean
-  positionScores: JSONObject
+  positionRanks: JSONObject
+  positionScores: JSONObject!
   primaryArchetype: String
   projectedPick: Int
   rank: Int

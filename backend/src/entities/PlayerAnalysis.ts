@@ -66,12 +66,12 @@ export class PlayerAnalysis {
     @Column({ name: 'best_position', nullable: true })
     bestPosition?: string;
 
-    @Field(() => GraphQLJSONObject, { nullable: true })
-    @Column('jsonb', { name: 'position_scores', nullable: true })
-    positionScores?: Record<string, number>;
+    @Field(() => GraphQLJSONObject)
+    @Column('jsonb', { name: 'position_scores' })
+    positionScores!: Record<string, number>;
 
     @Field(() => Float)
-    @Column({ name: 'normalized_score' })
+    @Column('decimal', { name: 'normalized_score', precision: 10, scale: 2 })
     normalizedScore!: number;
 
     @Field(() => [PositionScore], { nullable: true })  // Changed to array of PositionScore
@@ -97,4 +97,8 @@ export class PlayerAnalysis {
     @Field(() => [String], { nullable: true })  // Make it nullable
     @Column('text', { array: true, name: 'versatile_positions', nullable: true })
     versatilePositions?: string[];
+
+    @Field(() => GraphQLJSONObject, { nullable: true })
+    @Column('jsonb', { name: 'position_ranks', nullable: true })
+    positionRanks?: Record<string, number>;
 }

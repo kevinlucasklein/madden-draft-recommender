@@ -24,6 +24,7 @@
         secondaryArchetype?: string;
         specialTraits: string[];
         versatilePositions: string[];
+        positionRanks: Record<string, number>;
     }
 
     interface Player {
@@ -44,6 +45,8 @@
     let error: any = null;
     let players: Player[] = [];
     let analyzing = false;
+    // Add a filter for which position rank to display
+    let selectedRankPosition = '';
 
         // Add filter states
         let filters = {
@@ -51,11 +54,53 @@
         age: { min: 0, max: 99 },
         currentPosition: '',
         overall: { min: 0, max: 99 },
-        bestPosition: ''
+        bestPosition: '',
+        rankPosition: '' // Add this
     };
 
+    // Add sorting functionality
+    let sortBy = 'name';
+    let sortDirection: 'asc' | 'desc' = 'asc';
+
+    // Add position mapping for grouped positions
+    const positionGroups = {
+        'DE': ['RE', 'LE'],
+        'DT': ['DT', 'NT'],
+        'G': ['LG', 'RG'],
+        'T': ['LT', 'RT'],
+        'OLB': ['LOLB', 'ROLB'],
+    };
+
+    // Helper function to get all specific positions for a group
+    function getSpecificPositions(groupPosition: string): string[] {
+        return positionGroups[groupPosition as keyof typeof positionGroups] || [groupPosition];
+    }
+
+    // Helper function to get normalized position
+    function getNormalizedPosition(position: string): string {
+        return positionToGroup[position] || position;
+    }
+
+    // Helper function to get position rank considering position groups
+    function getPositionRank(player: Player, position: string): number | null {
+        if (!player.analysis?.positionRanks) return null;
+
+        // If it's a grouped position, find the best rank among the specific positions
+        const specificPositions = getSpecificPositions(position);
+        if (specificPositions.length > 1) {
+            const ranks = specificPositions
+                .map(pos => player.analysis.positionRanks[pos])
+                .filter(rank => rank !== undefined);
+            return ranks.length > 0 ? Math.min(...ranks) : null;
+        }
+
+        // Otherwise return the direct position rank
+        return player.analysis.positionRanks[position] || null;
+    }
+
     // Filtered players computed property
-    $: filteredPlayers = players.filter(player => {
+    $: filteredPlayers = players
+        .filter(player => {
         // Name filter
         if (filters.name && !`${player.firstName} ${player.lastName}`.toLowerCase().includes(filters.name.toLowerCase())) {
             return false;
@@ -66,9 +111,12 @@
             return false;
         }
         
-        // Current position filter
-        if (filters.currentPosition && player.position.name !== filters.currentPosition) {
-            return false;
+        // Current position filter with normalization
+        if (filters.currentPosition) {
+            const normalizedCurrentPos = getNormalizedPosition(player.position.name);
+            if (normalizedCurrentPos !== filters.currentPosition) {
+                return false;
+            }
         }
         
         // Overall rating filter
@@ -83,11 +131,28 @@
         }
         
         return true;
-    });
+        })
+        .sort((a, b) => {
+            if (filters.rankPosition) {
+                const rankA = getPositionRank(a, filters.rankPosition) || Infinity;
+                const rankB = getPositionRank(b, filters.rankPosition) || Infinity;
+                return rankA - rankB;
+            }
+            return 0;
+        });
 
     // Get unique positions for dropdowns
-    $: positions = [...new Set(players.map(p => p.position.name))].sort();
+    // Get unique positions for dropdowns, using normalized positions
+    $: positions = [...new Set(players.map(p => getNormalizedPosition(p.position.name)))].sort();
     $: bestPositions = [...new Set(players.filter(p => p.analysis?.bestPosition).map(p => p.analysis.bestPosition))].sort();
+
+    // Create reverse mapping for easy lookup
+    const positionToGroup = Object.entries(positionGroups).reduce((acc, [group, positions]) => {
+        positions.forEach(pos => {
+            acc[pos] = group;
+        });
+        return acc;
+    }, {} as Record<string, string>);
     
     async function handleAnalyzeAll() {
     analyzing = true;
@@ -149,6 +214,33 @@
         }
         return topPositions;
     }
+
+    // Update the position display in the table
+    function formatPosition(position: string): string {
+        const group = positionToGroup[position];
+        return group ? `${position} (${group})` : position;
+    }
+
+    // Update the position ranks display in the table
+    function formatPositionRanks(player: Player, position: string | null = null): string[] {
+        if (!player.analysis?.positionRanks) return [];
+
+        if (position) {
+            // Show ranks for specific position group
+            const specificPositions = getSpecificPositions(position);
+            return specificPositions
+                .map(pos => ({
+                    position: pos,
+                    rank: player.analysis.positionRanks[pos]
+                }))
+                .filter(({rank}) => rank !== undefined)
+                .map(({position, rank}) => `${position}: #${rank}`);
+        }
+
+        // Show all ranks
+        return Object.entries(player.analysis.positionRanks)
+            .map(([pos, rank]) => `${pos}: #${rank}`);
+    }
 </script>
 
 <div class="mb-4 flex items-center gap-4">
@@ -164,6 +256,17 @@
             Analyze All Players
         {/if}
     </button>
+
+    <!-- Add position rank filter -->
+    <select 
+        class="select select-bordered select-sm"
+        bind:value={filters.rankPosition}
+    >
+        <option value="">Show All Positions</option>
+        {#each positions as position}
+            <option value={position}>{position} Rankings</option>
+        {/each}
+    </select>
 </div>
 
 <div class="overflow-x-auto">
@@ -245,10 +348,9 @@
                 <th>Current Position</th>
                 <th>Overall</th>
                 <th>Best Position</th>
-                <th>Score</th>
                 <th>Viable Positions</th>
                 <th>Archetype</th>
-                <th>Special Traits</th>
+                <th>Position Rank</th>  <!-- Add this column -->
             </tr>
         </thead>
         <tbody>
@@ -261,28 +363,13 @@
                     <tr>
                         <td>{player.firstName} {player.lastName}</td>
                         <td>{player.age}</td>
-                        <td>{player.position.name}</td>
+                        <td>{formatPosition(player.position.name)}</td>
                         <td>{player.ratings[0]?.overall ?? 'N/A'}</td>
                         <td>
                             {#if player.analysis?.positionScores && player.analysis?.bestPosition}
                                 <span class="badge badge-lg badge-primary mb-1">
                                     {player.analysis.bestPosition} ({player.analysis.positionScores[player.analysis.bestPosition].toFixed(2)})
                                 </span>
-                            {/if}
-                        </td>
-                        <td>
-                            {#if player.analysis?.positionScores}
-                                <div class="flex flex-wrap gap-1">
-                                    {#each Object.entries(player.analysis.positionScores)
-                                        .sort(([, a], [, b]) => b - a)
-                                        .filter(([, score]) => score > 0) as [position, score]}
-                                        <span class="badge badge-sm {position === player.analysis.bestPosition ? 'badge-primary' : ''}">
-                                            {position} ({score.toFixed(2)})
-                                        </span>
-                                    {/each}
-                                </div>
-                            {:else}
-                                <span class="text-gray-400">No viable positions</span>
                             {/if}
                         </td>
                         <td>
@@ -301,6 +388,27 @@
                                     <span class="badge badge-accent badge-sm">{trait}</span>
                                 {/each}
                             </div>
+                        </td>
+                        <td>
+                            {#if filters.rankPosition}
+                                <!-- Show ranks for selected position group -->
+                                {#if formatPositionRanks(player, filters.rankPosition).length > 0}
+                                    <div class="flex flex-wrap gap-1">
+                                        {#each formatPositionRanks(player, filters.rankPosition) as rankText}
+                                            <span class="badge badge-lg">{rankText}</span>
+                                        {/each}
+                                    </div>
+                                {:else}
+                                    <span class="text-gray-400">N/A</span>
+                                {/if}
+                            {:else}
+                                <!-- Show all position ranks -->
+                                <div class="flex flex-wrap gap-1">
+                                    {#each formatPositionRanks(player) as rankText}
+                                        <span class="badge badge-sm">{rankText}</span>
+                                    {/each}
+                                </div>
+                            {/if}
                         </td>
                     </tr>
                 {/each}

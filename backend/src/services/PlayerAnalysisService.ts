@@ -32,6 +32,23 @@ type PositionAgeFactor = {
     P: number;
     RB: number;
     FB: number;
+    WR: number;
+    CB: number;
+    SS: number;
+    FS: number;
+    TE: number;
+    DE: number;
+    LOLB: number;
+    ROLB: number;
+    DT: number;
+    NT: number;
+    C: number;
+    G: number;
+    LG: number;
+    RG: number;
+    LT: number;
+    RT: number;
+    MLB: number;
 };
 
 interface PlayerArchetype {
@@ -147,6 +164,14 @@ export class PlayerAnalysisService {
             }
         }
     
+        // Apply age adjustment if age is available
+        if (typeof player.age === 'number') {
+            score = this.calculateAgeAdjustedScore(score, player.age, position);
+            this.log(`Age-adjusted score for ${player.firstName} ${player.lastName} at ${position}: ${score}`);
+        } else {
+            this.log(`No age data available for ${player.firstName} ${player.lastName}, skipping age adjustment`);
+        }
+    
         return score;
     }
 
@@ -160,13 +185,43 @@ export class PlayerAnalysisService {
             TWILIGHT: { maxAge: Infinity, modifier: 0.90 }
         };
     
-        // Type the position factors
+        // Expanded position factors based on physical demands and longevity
         const POSITION_AGE_FACTORS: PositionAgeFactor = {
-            QB: 1.03,
-            K: 1.03,
-            P: 1.03,
-            RB: 0.97,
-            FB: 0.97,
+            // Skill Positions (High Impact/Speed Dependent)
+            RB: 0.96,  // Running backs decline fastest due to physical toll
+            FB: 0.97,  // Fullbacks similar to RB but slightly better longevity
+            WR: 0.98,  // Speed-dependent but less contact than RB
+            CB: 0.98,  // Heavily dependent on speed and agility
+            
+            // Hybrid Positions (Mixed Physical/Skill)
+            SS: 0.99,  // Strong safeties face more physical demands
+            FS: 0.99,  // Free safeties slightly better longevity than SS
+            TE: 0.99,  // Tight ends balance receiving and blocking
+            
+            // Edge Positions (Power/Speed Mix)
+            DE: 0.99,  // Edge rushers rely on explosion and power
+            LOLB: 0.99,
+            ROLB: 0.99,
+            
+            // Interior Positions (Power/Technique)
+            DT: 1.00,  // Interior linemen rely more on technique
+            NT: 1.00,
+            C: 1.00,   // Centers rely on technique and mental game
+            G: 1.00,   // Guards similar to center
+            LG: 1.00,
+            RG: 1.00,
+            
+            // Tackle Positions
+            LT: 1.00,  // Tackles balance technique and athleticism
+            RT: 1.00,
+            
+            // Linebacker
+            MLB: 0.99, // Middle linebackers balance physical/mental
+            
+            // Low Impact Positions (Skill/Mental Focus)
+            QB: 1.03,  // Quarterbacks often improve with experience
+            K: 1.03,   // Kickers have longest careers
+            P: 1.03    // Punters similar to kickers
         };
     
         // Get age modifier
@@ -182,10 +237,63 @@ export class PlayerAnalysisService {
         const positionFactor = (POSITION_AGE_FACTORS as Record<string, number>)[position] || 1.0;
         const finalModifier = modifier * positionFactor;
     
+        this.log(`Age adjustment for ${position}: Base modifier ${modifier}, Position factor ${positionFactor}, Final ${finalModifier}`);
         return rawScore * finalModifier;
     }
 
+    private async updatePositionRanks(): Promise<void> {
+        try {
+            // Get all analyses
+            const analyses = await this.analysisRepository.find();
+            
+            // Group analyses by position scores
+            const positionGroups: Record<string, PlayerAnalysis[]> = {};
+            
+            analyses.forEach(analysis => {
+                Object.entries(analysis.positionScores).forEach(([position, score]) => {
+                    if (!positionGroups[position]) {
+                        positionGroups[position] = [];
+                    }
+                    positionGroups[position].push(analysis);
+                });
+            });
+    
+            // Sort and rank each position group
+            const updates = analyses.map(analysis => {
+                const positionRanks: Record<string, number> = {};
+                
+                Object.entries(analysis.positionScores).forEach(([position, score]) => {
+                    const positionList = positionGroups[position];
+                    // Sort by score descending
+                    positionList.sort((a, b) => 
+                        (b.positionScores[position] || 0) - (a.positionScores[position] || 0)
+                    );
+                    // Find index of current analysis
+                    const rank = positionList.findIndex(a => a.id === analysis.id) + 1;
+                    positionRanks[position] = rank;
+                });
+    
+                return {
+                    ...analysis,
+                    positionRanks
+                };
+            });
+    
+            // Batch save all updates
+            await this.analysisRepository.save(updates);
+            await this.clearAnalysisCache();
+            
+            this.log('Position ranks updated successfully');
+        } catch (error) {
+            this.log(`Error updating position ranks: ${error}`);
+            throw error;
+        }
+    }
+
     async analyzePlayer(playerId: number): Promise<PlayerAnalysis> {
+        // Cache the position weights lookup
+        const positionWeights = Object.entries(POSITION_STAT_WEIGHTS);
+        
         const player = await this.playerRepository
             .createQueryBuilder('player')
             .leftJoinAndSelect('player.ratings', 'ratings')
@@ -208,17 +316,21 @@ export class PlayerAnalysisService {
     
         const currentStats = player.stats[player.stats.length - 1];
     
-        // Calculate scores for each position
-        // Now this should work without type errors
+        // Calculate scores for each position more efficiently
         const positionScores: Record<string, number> = {};
-        for (const position of Object.keys(POSITION_STAT_WEIGHTS)) {
+        const calculations = positionWeights.map(([position, weights]) => {
             const score = this.calculatePositionScore(
-                currentStats, 
+                currentStats,
                 position as keyof typeof POSITION_STAT_WEIGHTS,
                 player
             );
+            return [position, score] as [string, number];
+        });
+    
+        // Assign all scores at once
+        calculations.forEach(([position, score]) => {
             positionScores[position] = score;
-        }
+        });
         
         const sortedPositions = Object.entries(positionScores)
             .sort(([, scoreA], [, scoreB]) => scoreB - scoreA)
@@ -240,15 +352,10 @@ export class PlayerAnalysisService {
     
         const archetype = determinePlayerArchetype(currentStats, bestPosition);
     
-        // Create or update analysis
-        let analysis = await this.findByPlayer(playerId);
-        if (!analysis) {
-            analysis = this.analysisRepository.create({
-                player: { id: playerId }
-            });
-        }
-    
-        Object.assign(analysis, {
+        // Batch the database operations
+        const analysis = await this.analysisRepository.save({
+            id: (await this.findByPlayer(playerId))?.id,
+            player: { id: playerId },
             positionScores,
             bestPosition,
             normalizedScore: bestScore,
@@ -259,15 +366,9 @@ export class PlayerAnalysisService {
             topPositions,
             viablePositionCount: topPositions.length
         });
-    
-        try {
-            const saved = await this.analysisRepository.save(analysis);
-            await this.clearAnalysisCache(analysis.id, playerId);
-            return saved;
-        } catch (error) {
-            console.error(`Error saving analysis for player ${playerId}:`, error);
-            throw error;
-        }
+
+        await this.clearAnalysisCache(analysis.id, playerId);
+        return analysis;
     }
 
     async analyzeAllPlayers(): Promise<void> {
@@ -276,32 +377,52 @@ export class PlayerAnalysisService {
             fs.writeFileSync(this.logFile, '');
             console.log('Starting analysis of all players...');
             
-            // Update the relations to match your entity structure
+            // Get all players in one query with necessary relations
             const players = await this.playerRepository
                 .createQueryBuilder('player')
                 .leftJoinAndSelect('player.ratings', 'ratings')
-                .leftJoinAndSelect('ratings.position', 'position')  // Join through ratings
+                .leftJoinAndSelect('ratings.position', 'position')
                 .leftJoinAndSelect('player.stats', 'stats')
                 .getMany();
             
             this.log(`Found ${players.length} players to analyze`);
             console.log(`Found ${players.length} players to analyze`);
             
-            for (const player of players) {
-                try {
-                    console.log(`Analyzing player ${player.id}: ${player.firstName} ${player.lastName}`);
-                    await this.analyzePlayer(player.id);
-                } catch (err) {
-                    const error = err as Error;
-                    this.log(`Error analyzing player ${player.id}: ${error.message}`);
-                    console.error(`Error analyzing player ${player.id}:`, error);
-                }
-                await new Promise(resolve => setTimeout(resolve, 100));
+            // Process players in batches
+            const BATCH_SIZE = 50;
+            const batches = [];
+            
+            for (let i = 0; i < players.length; i += BATCH_SIZE) {
+                const batch = players.slice(i, i + BATCH_SIZE);
+                batches.push(batch);
+            }
+    
+            // Process each batch concurrently
+            for (const batch of batches) {
+                await Promise.all(batch.map(async (player) => {
+                    try {
+                        console.log(`Analyzing player ${player.id}: ${player.firstName} ${player.lastName}`);
+                        const analysis = await this.analyzePlayer(player.id);
+                        
+                        // Batch save the analyses
+                        return analysis;
+                    } catch (err) {
+                        const error = err as Error;
+                        this.log(`Error analyzing player ${player.id}: ${error.message}`);
+                        console.error(`Error analyzing player ${player.id}:`, error);
+                        return null;
+                    }
+                }));
+                
+                // Small delay between batches to prevent overwhelming the DB
+                await new Promise(resolve => setTimeout(resolve, 50));
             }
         
             // Update ranks after all analyses are complete
+            // Update overall ranks and position ranks
             try {
                 await this.updateRanks();
+                await this.updatePositionRanks();
                 this.log('Ranks updated successfully');
             } catch (err) {
                 const error = err as Error;

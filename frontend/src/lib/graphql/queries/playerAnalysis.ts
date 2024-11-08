@@ -11,12 +11,13 @@ export const GET_PLAYERS_WITH_ANALYSIS = gql`
         name
       }
       ratings {
-        overall  # Changed from overallRating to overall
+        overall
       }
       analysis {
         bestPosition
         normalizedScore
         positionScores
+        positionRanks  # Added this line
         primaryArchetype
         secondaryArchetype
         specialTraits
@@ -26,7 +27,6 @@ export const GET_PLAYERS_WITH_ANALYSIS = gql`
   }
 `;
 
-// For a single player with more detail:
 export const GET_PLAYER_ANALYSIS = gql`
   query GetPlayerAnalysis($playerId: ID!) {
     player(id: $playerId) {
@@ -44,6 +44,7 @@ export const GET_PLAYER_ANALYSIS = gql`
         bestPosition
         normalizedScore
         positionScores
+        positionRanks  # Added this line
         topPositions {
           position
           score
