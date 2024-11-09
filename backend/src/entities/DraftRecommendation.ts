@@ -4,6 +4,18 @@ import { DraftSession } from './DraftSession';
 import { Player } from './Player';
 
 @ObjectType()
+class SuggestedPosition {
+    @Field()
+    position!: string;
+
+    @Field(() => Float)
+    score!: number;
+
+    @Field()
+    reason!: string;
+}
+
+@ObjectType()
 @Entity('draft_recommendations')
 export class DraftRecommendation {
     @Field(() => Int)
@@ -40,4 +52,7 @@ export class DraftRecommendation {
     @Field()
     @Column()
     reason!: string;
+
+    @Field(() => [SuggestedPosition], { nullable: true })
+    suggestedPositions?: SuggestedPosition[];  // Optional: for position suggestions
 }

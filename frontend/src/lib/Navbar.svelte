@@ -29,6 +29,13 @@
             </li>
             <li>
                 <a 
+                    href="/draft-board" 
+                    class:active={currentPath === '/draft-board'}>
+                    Draft Board
+                </a>
+            </li>
+            <li>
+                <a 
                     href="/analysis" 
                     class:active={currentPath === '/analysis'}>
                     Position Analysis

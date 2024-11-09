@@ -4,7 +4,7 @@
   import Home from './routes/Home.svelte';
   import Draft from './routes/Draft.svelte';
   import Analysis from './routes/Analysis.svelte';
-
+  import DraftBoard from './routes/DraftBoard.svelte';
   let currentRoute: string;
 
   function handleNavigation() {
@@ -39,6 +39,8 @@
       <Draft />
   {:else if currentRoute === '/analysis'}
       <Analysis />
+  {:else if currentRoute === '/draftboard'}
+      <DraftBoard />
   {:else}
       <div class="not-found">
           <h1>404 - Page Not Found</h1>

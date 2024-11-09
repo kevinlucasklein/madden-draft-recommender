@@ -20,9 +20,28 @@ export const GENERATE_RECOMMENDATIONS = gql`
           round
           round_pick
         }
+        analysis {
+          bestPosition
+          normalizedScore
+          positionScores
+          primaryArchetype
+          secondaryArchetype
+          specialTraits
+          viablePositions {
+            position
+            score
+            percentageAboveAverage
+          }
+          viablePositionCount
+        }
       }
       recommendationScore
       reason
+      suggestedPositions {  # Optional: Add if you want to include position suggestions
+        position
+        score
+        reason
+      }
     }
   }
 `;

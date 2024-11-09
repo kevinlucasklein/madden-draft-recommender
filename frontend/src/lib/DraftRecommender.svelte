@@ -27,6 +27,7 @@
         lastName: string | null;
         ratings: Rating[];      // Changed to array
         draftData: DraftData;
+        analysis: PlayerAnalysis;  // Add this line
     }
 
     interface Recommendation {
@@ -55,6 +56,24 @@
         position: string;
         needed: number;
         maximum: number;
+    }
+    // Add these new interfaces
+    interface ViablePosition {
+        position: string;
+        score: number;
+        percentageAboveAverage: number;
+    }
+
+    interface PlayerAnalysis {
+        id: number;
+        bestPosition: string;
+        normalizedScore: number;
+        positionScores: Record<string, number>;
+        primaryArchetype: string;
+        secondaryArchetype: string;
+        specialTraits: string[];
+        viablePositions: ViablePosition[];
+        viablePositionCount: number;
     }
 
     type UnitName = 'Offense' | 'Defense' | 'Special Teams';
@@ -626,6 +645,34 @@
                     <h4>{rec.player.firstName || ''} {rec.player.lastName || ''}</h4>
                     <p>Position: {rec.player.ratings?.[0]?.position?.name || 'Unknown'}</p>
                     <p>Overall Rating: {rec.player.ratings?.[0]?.overallRating || 'N/A'}</p>
+                    
+                    <!-- Add analysis information -->
+                    {#if rec.player.analysis}
+                        {#if rec.player.analysis.bestPosition}
+                            <p>Best Position: {rec.player.analysis.bestPosition}</p>
+                        {/if}
+                        
+                        {#if rec.player.analysis.primaryArchetype}
+                            <p>Type: {rec.player.analysis.primaryArchetype}
+                            {#if rec.player.analysis.secondaryArchetype}
+                                / {rec.player.analysis.secondaryArchetype}
+                            {/if}
+                            </p>
+                        {/if}
+                
+                        {#if rec.player.analysis.viablePositions?.length}
+                            <p>Viable Positions: 
+                                {rec.player.analysis.viablePositions
+                                    .map(vp => `${vp.position} (${vp.score.toFixed(1)}%)`)
+                                    .join(', ')}
+                            </p>
+                        {/if}
+                
+                        {#if rec.player.analysis.specialTraits?.length}
+                            <p>Traits: {rec.player.analysis.specialTraits.join(', ')}</p>
+                        {/if}
+                    {/if}
+                
                     <p>Historical Draft Position: 
                         {#if rec.player.draftData}
                             Round {rec.player.draftData.round}, 
@@ -635,8 +682,7 @@
                             Not Available
                         {/if}
                     </p>
-                    <p>Recommendation Score: {rec.recommendationScore?.toFixed(2) || '0.00'}</p>
-                    <p class="reason">Reason: {rec.reason}</p>
+                    <p class="reason">Analysis: {rec.reason}</p>
                     <button 
                         class="draft-button" 
                         on:click={() => draftPlayer(rec)}
@@ -773,8 +819,24 @@
     }
 
     .recommendation-card p {
-        margin: 5px 0;
-        color: #666;
+    margin: 8px 0;
+    color: #666;
+    line-height: 1.4;
+    }
+
+    .recommendation-card .traits {
+        color: #2196F3;
+        font-style: italic;
+    }
+
+    .viable-positions {
+        font-size: 0.9em;
+        color: #555;
+    }
+
+    .archetype {
+        font-weight: 500;
+        color: #333;
     }
 
     .recommendation-card {

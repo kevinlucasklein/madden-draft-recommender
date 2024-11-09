@@ -12,6 +12,7 @@ import { DraftSession } from '../entities/DraftSession';
 import { DraftPick } from '../entities/DraftPick';
 import { DraftRecommendation } from '../entities/DraftRecommendation';
 import { DraftData } from '../entities/DraftData';
+import { DraftBoardPick, DraftBoardResponse } from '../entities/DraftBoard';
 import * as dotenv from 'dotenv';
 
 dotenv.config();
@@ -36,7 +37,9 @@ export const AppDataSource = new DataSource({
         DraftSession,
         DraftPick,
         DraftRecommendation,
-        DraftData
+        DraftData,
+        DraftBoardPick,
+        DraftBoardResponse
     ],
     synchronize: false,
     logging: true,

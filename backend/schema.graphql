@@ -190,6 +190,7 @@ type DraftRecommendation {
   recommendationScore: Float!
   roundNumber: Int!
   session: DraftSession!
+  suggestedPositions: [SuggestedPosition!]
 }
 
 type DraftSession {
@@ -444,6 +445,12 @@ type RosterRequirement {
   minimumPlayers: Int!
   position: String!
   positionGroup: String!
+}
+
+type SuggestedPosition {
+  position: String!
+  reason: String!
+  score: Float!
 }
 
 type Team {

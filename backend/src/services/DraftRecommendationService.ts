@@ -254,8 +254,12 @@ export class DraftRecommendationService {
             const roundMultiplier = Math.ceil(input.roundNumber / 2);
             const pickRange = baseRange * roundMultiplier;
             
-            const minPick = Math.max(1, overallPick - pickRange);
-            const maxPick = overallPick + pickRange;
+            // Calculate pick range - only look ahead, not behind
+            const minPick = Math.max(1, overallPick - 10);  // At most 10 picks before
+            const maxPick = overallPick + pickRange;        // Keep existing forward range
+
+            console.log(`Round ${input.roundNumber}, Pick ${input.pickNumber} (Overall ${overallPick})`);
+            console.log(`Looking for players between picks ${minPick} and ${maxPick}`);
 
             console.log(`Round ${input.roundNumber}, Pick ${input.pickNumber} (Overall ${overallPick})`);
             console.log(`Looking for players between picks ${minPick} and ${maxPick}`);
@@ -266,7 +270,8 @@ export class DraftRecommendationService {
                     ratings: {
                         position: true,
                     },
-                    draftData: true
+                    draftData: true,
+                    analysis: true
                 },
                 where: {
                     draftData: {
@@ -290,11 +295,16 @@ export class DraftRecommendationService {
                         overall_pick: true,
                         round: true,
                         round_pick: true
-                    }
-                },
-                order: {
-                    draftData: {
-                        overall_pick: 'ASC'
+                    },
+                    analysis: {
+                        id: true,  // Always include id for relations
+                        bestPosition: true,
+                        normalizedScore: true,
+                        viablePositionCount: true,
+                        primaryArchetype: true,
+                        secondaryArchetype: true,
+                        specialTraits: true,
+                        versatilePositions: true
                     }
                 }
             });
@@ -342,31 +352,53 @@ export class DraftRecommendationService {
     
             const recommendations: DraftRecommendation[] = [];
 
+            // Modify the scoring logic
             for (const player of availablePlayers) {
                 const position = player.ratings?.[0]?.position?.name || 'Unknown Position';
                 const playerName = `${player.firstName || ''} ${player.lastName || ''}`.trim() || 'Unknown Player';
                 
-                // Get player's overall rating and draft position
-                const playerOverallPick = player.draftData?.overall_pick || 0;
-                const playerOverallRating = player.ratings?.[0]?.overallRating || 0;
-                const pickDifference = Math.abs(playerOverallPick - overallPick);
+            // Get analysis data with type checks
+            const analysis = player.analysis;
+            const positionScores = analysis?.positionScores || {};
+            const bestPosition = analysis?.bestPosition;
+
+            // Use the best position score as the recommendation score
+            let recommendationScore = 0;
+
+            // Safely check for viable positions
+            if (analysis && 
+                'viablePositions' in analysis && 
+                Array.isArray(analysis.viablePositions) && 
+                analysis.viablePositions.length > 0) {
                 
-                // Calculate score using both draft position and overall rating
-                // Draft position proximity has more weight (70%) than overall rating (30%)
-                const draftPositionScore = Math.exp(-pickDifference / 5); // More gradual decay
-                const ratingScore = playerOverallRating / 100;
+                // Find the highest position score
+                const scores = analysis.viablePositions
+                    .map(vp => typeof vp.score === 'number' ? vp.score : 0);
                 
-                const recommendationScore = (draftPositionScore * 0.7) + (ratingScore * 0.3);
-            
+                recommendationScore = Math.max(...scores) / 100; // Convert to 0-1 scale
+            }
+
+            // Ensure score is valid
+            recommendationScore = Math.max(0, Math.min(recommendationScore, 1)) || 0;
+
+            console.log('Score Components:', {
+                playerName,
+                bestPosition,
+                recommendationScore,
+                viablePositions: analysis?.viablePositions || []
+            });
+
                 const recommendation = this.recommendationRepository.create({
                     session: { id: input.sessionId },
                     player: { id: player.id },
                     roundNumber: input.roundNumber,
                     pickNumber: input.pickNumber,
                     recommendationScore,
-                    reason: `${position} - ${playerName} (Projected: Overall Pick ${playerOverallPick}, Rating: ${playerOverallRating})`
+                    reason: `${position} - ${playerName} (Projected: Pick ${player.draftData?.overall_pick}, Rating: ${player.ratings?.[0]?.overallRating})
+                            ${bestPosition !== position ? `Best Position: ${bestPosition}` : ''}
+                            ${analysis?.primaryArchetype ? `Type: ${analysis.primaryArchetype}` : ''}`
                 });
-            
+
                 recommendations.push(recommendation);
             }
     
@@ -376,25 +408,71 @@ export class DraftRecommendationService {
             );
         
             // Fetch the saved recommendations with all relations
-            const recommendationsWithRelations = await this.recommendationRepository.find({
-                where: {
-                    id: In(savedRecommendations.map(rec => rec.id))
-                },
-                relations: {
-                    player: {
-                        ratings: {
-                            position: true
-                        },
-                        draftData: true
+            // Fetch the saved recommendations with all relations
+            // Fetch the saved recommendations with all relations
+            const recommendationsWithRelations = await this.recommendationRepository
+                .createQueryBuilder('recommendation')
+                .leftJoinAndSelect('recommendation.player', 'player')
+                .leftJoinAndSelect('player.ratings', 'ratings')
+                .leftJoinAndSelect('ratings.position', 'position')
+                .leftJoinAndSelect('player.draftData', 'draftData')
+                .leftJoinAndSelect('player.analysis', 'analysis')
+                .where('recommendation.id IN (:...ids)', { 
+                    ids: savedRecommendations.map(rec => rec.id) 
+                })
+                .orderBy('recommendation.recommendationScore', 'DESC')
+                .take(input.limit)
+                .getMany();
+
+            // Enhance the recommendations with analysis data
+            const enhancedRecommendations = recommendationsWithRelations.map(rec => {
+                if (!rec.player || !rec.player.ratings || !rec.player.ratings.length) {
+                    console.warn(`Missing player data for recommendation ${rec.id}`);
+                    return rec;
+                }
+            
+                const analysis = rec.player.analysis;
+                const ratings = rec.player.ratings[0];
+                const currentPosition = ratings?.position?.name || 'Unknown';
+                const playerName = `${rec.player.firstName || ''} ${rec.player.lastName || ''}`.trim();
+                
+                // Create a more detailed reason string
+                const reasonParts = [
+                    `${currentPosition} - ${playerName}`,
+                    `Projected: Pick ${rec.player.draftData?.overall_pick || 'Unknown'}, Rating: ${ratings?.overallRating || 'Unknown'}`
+                ];
+            
+                if (analysis) {
+                    if (analysis.bestPosition && analysis.bestPosition !== currentPosition) {
+                        reasonParts.push(`Best Position: ${analysis.bestPosition}`);
                     }
-                },
-                order: {
-                    recommendationScore: 'DESC'
-                },
-                take: input.limit
+            
+                    if (analysis.primaryArchetype) {
+                        reasonParts.push(`Primary Type: ${analysis.primaryArchetype}`);
+                    }
+            
+                    if (analysis.secondaryArchetype) {
+                        reasonParts.push(`Secondary Type: ${analysis.secondaryArchetype}`);
+                    }
+            
+                    if (Array.isArray(analysis.viablePositions) && analysis.viablePositions.length > 0) {
+                        const viablePositionsText = analysis.viablePositions
+                            .map(vp => `${vp.position} (${Number(vp.score).toFixed(1)})`)
+                            .join(', ');
+                        reasonParts.push(`Viable at: ${viablePositionsText}`);
+                    }
+            
+                    if (Array.isArray(analysis.specialTraits) && analysis.specialTraits.length > 0) {
+                        reasonParts.push(`Traits: ${analysis.specialTraits.join(', ')}`);
+                    }
+                }
+            
+                rec.reason = reasonParts.join(' | ');
+                return rec;
             });
+
+            return enhancedRecommendations;
     
-            return recommendationsWithRelations;
         } catch (error) {
             console.error('Error in generate:', error);
             throw error;
