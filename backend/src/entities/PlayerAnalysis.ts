@@ -14,6 +14,18 @@ class PositionScore {
 }
 
 @ObjectType()
+class ViablePosition {
+    @Field()
+    position!: string;
+
+    @Field(() => Float)
+    score!: number;
+
+    @Field(() => Float)
+    percentageAboveAverage!: number;
+}
+
+@ObjectType()
 @Entity('player_analysis')
 export class PlayerAnalysis {
     @Field(() => Int)
@@ -78,7 +90,7 @@ export class PlayerAnalysis {
     @Column('jsonb', { name: 'top_positions', nullable: true })
     topPositions?: PositionScore[];
 
-    @Field(() => Int, { nullable: true })  // Make it nullable
+    @Field(() => Int, { nullable: true })
     @Column({ name: 'viable_position_count', nullable: true })
     viablePositionCount?: number;
 
@@ -101,4 +113,14 @@ export class PlayerAnalysis {
     @Field(() => GraphQLJSONObject, { nullable: true })
     @Column('jsonb', { name: 'position_ranks', nullable: true })
     positionRanks?: Record<string, number>;
+
+    @Field(() => [ViablePosition], { nullable: true })
+    @Column('jsonb', { name: 'viable_positions', nullable: true })
+    viablePositions?: {
+        position: string;
+        score: number;
+        percentageAboveAverage: number;
+    }[];
+
+
 }

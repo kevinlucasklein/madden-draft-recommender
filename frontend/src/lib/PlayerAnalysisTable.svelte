@@ -41,6 +41,25 @@
         analysis: PlayerAnalysis;
     }
 
+    interface ViablePosition {
+        position: string;
+        score: number;
+        percentageAboveAverage: number;
+    }
+
+    interface PlayerAnalysis {
+        bestPosition: string;
+        normalizedScore: number;
+        positionScores: Record<string, number>;
+        viablePositionCount: number;
+        primaryArchetype: string;
+        secondaryArchetype?: string;
+        specialTraits: string[];
+        versatilePositions: string[];
+        positionRanks: Record<string, number>;
+        viablePositions: ViablePosition[];  // Add this
+    }
+
     let loading = true;
     let error: any = null;
     let players: Player[] = [];
@@ -373,14 +392,21 @@
                             {/if}
                         </td>
                         <td>
-                            <div>
-                                <span class="font-semibold">{player.analysis.primaryArchetype}</span>
-                                {#if player.analysis.secondaryArchetype}
-                                    <span class="text-sm text-gray-500">
-                                        / {player.analysis.secondaryArchetype}
-                                    </span>
-                                {/if}
-                            </div>
+                            {#if player.analysis?.viablePositions?.length > 0}
+                                <div class="flex flex-wrap gap-1">
+                                    {#each player.analysis.viablePositions as viable}
+                                        <span class="badge badge-lg {viable.position === player.analysis.bestPosition ? 'badge-primary' : 'badge-secondary'} mb-1">
+                                            {viable.position} ({viable.score.toFixed(1)})
+                                            <span class="text-xs ml-1" class:text-success={viable.percentageAboveAverage > 20} 
+                                                  class:text-warning={viable.percentageAboveAverage <= 20}>
+                                                +{viable.percentageAboveAverage.toFixed(1)}%
+                                            </span>
+                                        </span>
+                                    {/each}
+                                </div>
+                            {:else}
+                                <span class="text-gray-400">No viable positions</span>
+                            {/if}
                         </td>
                         <td>
                             <div class="flex flex-wrap gap-1">

@@ -17,11 +17,17 @@ export const GET_PLAYERS_WITH_ANALYSIS = gql`
         bestPosition
         normalizedScore
         positionScores
-        positionRanks  # Added this line
+        positionRanks
         primaryArchetype
         secondaryArchetype
         specialTraits
         versatilePositions
+        viablePositions {  # Add these fields
+          position
+          score
+          percentageAboveAverage
+        }
+        viablePositionCount
       }
     }
   }
@@ -44,12 +50,17 @@ export const GET_PLAYER_ANALYSIS = gql`
         bestPosition
         normalizedScore
         positionScores
-        positionRanks  # Added this line
+        positionRanks
         topPositions {
           position
           score
         }
         viablePositionCount
+        viablePositions {  # Add these fields
+          position
+          score
+          percentageAboveAverage
+        }
         primaryArchetype
         secondaryArchetype
         versatilePositions

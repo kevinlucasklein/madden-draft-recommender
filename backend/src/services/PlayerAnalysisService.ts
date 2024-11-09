@@ -19,6 +19,29 @@ type PositionWeights = {
     [key: string]: StatWeight;
 };
 
+const POSITION_GROUPS = {
+    EDGE: ['DE', 'LOLB', 'ROLB'],
+    INTERIOR_DL: ['DT', 'NT'],
+    INTERIOR_OL: ['C', 'G', 'LG', 'RG'],
+    TACKLE: ['LT', 'RT'],
+    SECONDARY: ['CB', 'FS', 'SS'],
+    LINEBACKER: ['MLB', 'LOLB', 'ROLB'],  // Some overlap with EDGE
+    SKILL: ['WR', 'RB', 'HB', 'FB', 'TE'],
+    SPECIALIST: ['K', 'P'],
+    QB: ['QB']  // Keep QB separate due to unique skillset
+};
+
+const GROUP_THRESHOLDS = {
+    INTERIOR_DL: 7,  // Lower for DTs due to high baseline
+    INTERIOR_OL: 7,  // Lower for interior OL positions
+    TACKLE: 7,       // Lower for OTs
+    EDGE: 10,         // Keep slightly higher for edge rushers
+    LINEBACKER: 10,   // Keep slightly higher for LBs
+    SECONDARY: 10,    // Keep higher for DBs due to specific skills
+    SKILL: 13,        // Keep higher for skill positions
+    SPECIALIST: 15,   // Keep very high for specialists
+    QB: 9           // Keep very high for QBs
+};
 // Define interfaces for our types
 interface PositionThreshold {
     minWeight: number;
@@ -101,6 +124,152 @@ export class PlayerAnalysisService {
         } catch (error) {
             console.log(`[PlayerAnalysis] ${message}`);
             console.error('Error writing to log file:', error);
+        }
+    }
+
+    private async calculatePositionAverages(): Promise<Record<string, number>> {
+        const analyses = await this.analysisRepository.find({
+            relations: {
+                player: {
+                    ratings: {
+                        position: true
+                    }
+                }
+            }
+        });
+        
+        const positionAverages: Record<string, { sum: number; count: number }> = {};
+        
+        analyses.forEach(analysis => {
+            // Get position through ratings
+            const primaryPosition = analysis.player?.ratings?.[0]?.position?.name;
+            if (!primaryPosition) {
+                this.log(`Warning: No position found for player ${analysis.player?.id}`);
+                return;
+            }
+    
+            Object.entries(analysis.positionScores).forEach(([position, score]) => {
+                // Initialize if needed
+                if (!positionAverages[position]) {
+                    positionAverages[position] = { sum: 0, count: 0 };
+                }
+                
+                // Only include scores from players whose primary position is in the same group
+                const positionGroup = Object.entries(POSITION_GROUPS)
+                    .find(([_, positions]) => positions.includes(primaryPosition))?.[0];
+                const scorePositionGroup = Object.entries(POSITION_GROUPS)
+                    .find(([_, positions]) => positions.includes(position))?.[0];
+                    
+                if (positionGroup === scorePositionGroup) {
+                    positionAverages[position].sum += score;
+                    positionAverages[position].count++;
+                }
+            });
+        });
+    
+        // Calculate final averages
+        const averages: Record<string, number> = {};
+        Object.entries(positionAverages).forEach(([position, { sum, count }]) => {
+            averages[position] = count > 0 ? sum / count : 0;
+        });
+    
+        this.log(`Position group averages calculated: ${JSON.stringify(averages)}`);
+        return averages;
+    }
+    
+    private async updateViablePositions(): Promise<void> {
+        try {
+            const averages = await this.calculatePositionAverages();
+            const analyses = await this.analysisRepository.find({
+                relations: {
+                    player: {
+                        ratings: {
+                            position: true
+                        }
+                    }
+                }
+            });
+            
+            const updates = analyses.map(analysis => {
+                const primaryPosition = analysis.player?.ratings?.[0]?.position?.name;
+                if (!primaryPosition) {
+                    this.log(`Warning: No position found for player ${analysis.player?.id}`);
+                    return {
+                        id: analysis.id,
+                        viablePositions: [],
+                        viablePositionCount: 0
+                    };
+                }
+    
+                const primaryGroup = Object.entries(POSITION_GROUPS)
+                    .find(([_, positions]) => positions.includes(primaryPosition))?.[0];
+    
+                const viablePositions = Object.entries(analysis.positionScores)
+                    .map(([position, score]) => {
+                        const positionGroup = Object.entries(POSITION_GROUPS)
+                            .find(([_, positions]) => positions.includes(position))?.[0];
+                        const percentageAboveAverage = ((score - (averages[position] || 0)) / (averages[position] || 1)) * 100;
+                        
+                        // Get base threshold from position group
+                        let threshold = GROUP_THRESHOLDS[positionGroup as keyof typeof GROUP_THRESHOLDS] || 20;
+                        
+                        // Adjust threshold based on relationship
+                        if (primaryGroup === positionGroup) {
+                            threshold -= 5; // Even lower threshold for same group
+                        } else if (
+                            (primaryGroup === 'EDGE' && positionGroup === 'LINEBACKER') ||
+                            (primaryGroup === 'LINEBACKER' && positionGroup === 'EDGE') ||
+                            (primaryGroup === 'INTERIOR_OL' && positionGroup === 'TACKLE') ||
+                            (primaryGroup === 'TACKLE' && positionGroup === 'INTERIOR_OL')
+                        ) {
+                            threshold -= 3; // Lower threshold for related groups
+                        }
+    
+                        return {
+                            position,
+                            score,
+                            percentageAboveAverage,
+                            isViable: percentageAboveAverage >= threshold
+                        };
+                    })
+                    .filter(pos => pos.isViable)
+                    .sort((a, b) => b.percentageAboveAverage - a.percentageAboveAverage);
+    
+                return {
+                    id: analysis.id,
+                    viablePositions,
+                    viablePositionCount: viablePositions.length
+                };
+            });
+    
+            // Log the first update to verify the data
+            this.log(`Sample update object: ${JSON.stringify(updates[0])}`);
+    
+            // Use query builder for explicit update
+            for (const update of updates) {
+                await this.analysisRepository
+                    .createQueryBuilder()
+                    .update(PlayerAnalysis)
+                    .set({
+                        viablePositions: update.viablePositions,
+                        viablePositionCount: update.viablePositionCount
+                    })
+                    .where("id = :id", { id: update.id })
+                    .execute();
+            }
+    
+            await this.clearAnalysisCache();
+            
+            // Verify the update worked
+            const verificationCheck = await this.analysisRepository.findOne({
+                where: { id: updates[0].id }
+            });
+            this.log(`Verification check: ${JSON.stringify(verificationCheck?.viablePositions)}`);
+            
+            this.log('Viable positions saved to database successfully');
+        } catch (error) {
+            this.log(`Error updating viable positions: ${error}`);
+            throw error;
         }
     }
 
@@ -388,7 +557,7 @@ export class PlayerAnalysisService {
             this.log(`Found ${players.length} players to analyze`);
             console.log(`Found ${players.length} players to analyze`);
             
-            // Process players in batches
+            // Step 1: Analyze all players to get their position scores
             const BATCH_SIZE = 50;
             const batches = [];
             
@@ -397,15 +566,11 @@ export class PlayerAnalysisService {
                 batches.push(batch);
             }
     
-            // Process each batch concurrently
             for (const batch of batches) {
                 await Promise.all(batch.map(async (player) => {
                     try {
                         console.log(`Analyzing player ${player.id}: ${player.firstName} ${player.lastName}`);
-                        const analysis = await this.analyzePlayer(player.id);
-                        
-                        // Batch save the analyses
-                        return analysis;
+                        return await this.analyzePlayer(player.id);
                     } catch (err) {
                         const error = err as Error;
                         this.log(`Error analyzing player ${player.id}: ${error.message}`);
@@ -414,20 +579,30 @@ export class PlayerAnalysisService {
                     }
                 }));
                 
-                // Small delay between batches to prevent overwhelming the DB
                 await new Promise(resolve => setTimeout(resolve, 50));
             }
         
-            // Update ranks after all analyses are complete
-            // Update overall ranks and position ranks
+            // Step 2: Update ranks and position-specific data
             try {
+                this.log('Starting post-analysis updates...');
+                
+                // Update overall ranks first
                 await this.updateRanks();
+                this.log('Overall ranks updated');
+                
+                // Update position-specific ranks
                 await this.updatePositionRanks();
-                this.log('Ranks updated successfully');
+                this.log('Position ranks updated');
+                
+                // Now that we have all scores, calculate viable positions
+                await this.updateViablePositions();
+                this.log('Viable positions updated');
+                
+                this.log('All post-analysis updates completed successfully');
             } catch (err) {
                 const error = err as Error;
-                this.log(`Error updating ranks: ${error.message}`);
-                console.error('Error updating ranks:', error);
+                this.log(`Error in post-analysis updates: ${error.message}`);
+                console.error('Error in post-analysis updates:', error);
             }
             
             this.log('Analysis complete');

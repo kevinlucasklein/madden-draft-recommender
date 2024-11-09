@@ -312,6 +312,7 @@ type PlayerAnalysis {
   topPositions: [PositionScore!]
   versatilePositions: [String!]
   viablePositionCount: Int
+  viablePositions: [ViablePosition!]
 }
 
 type PlayerRating {
@@ -589,4 +590,10 @@ input UpdateRosterRequirementInput {
 input UpdateTeamInput {
   label: String
   name: String
+}
+
+type ViablePosition {
+  percentageAboveAverage: Float!
+  position: String!
+  score: Float!
 }
