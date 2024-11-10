@@ -2,7 +2,7 @@ import { Resolver, Query, Mutation, Arg, Int, FieldResolver, Root, Float } from 
 import { Service } from 'typedi';
 import { PlayerAnalysis } from '../entities/PlayerAnalysis';
 import { PlayerAnalysisService } from '../services/PlayerAnalysisService';
-import { CreatePlayerAnalysisInput, UpdatePlayerAnalysisInput } from '../inputs/PlayerAnalysisInput';
+import { Position } from '../config/positionStats'; // Add this import
 import { GraphQLJSONObject } from 'graphql-type-json';
 
 @Service()
@@ -12,66 +12,42 @@ export class PlayerAnalysisResolver {
         private analysisService: PlayerAnalysisService
     ) {}
 
-    @Query(() => [PlayerAnalysis])
-    async playerAnalyses() {
-        return this.analysisService.findAll();
-    }
-
-    @Query(() => PlayerAnalysis, { nullable: true })
-    async playerAnalysis(@Arg('id', () => Int) id: number) {
-        return this.analysisService.findOne(id);
-    }
-
     @Query(() => PlayerAnalysis, { nullable: true })
     async playerAnalysisByPlayer(@Arg('playerId', () => Int) playerId: number) {
         return this.analysisService.findByPlayer(playerId);
     }
 
-    @Mutation(() => PlayerAnalysis)
-    async createPlayerAnalysis(@Arg('input') input: CreatePlayerAnalysisInput) {
-        return this.analysisService.create(input);
-    }
-
-    @Mutation(() => PlayerAnalysis)
-    async updatePlayerAnalysis(
-        @Arg('id', () => Int) id: number,
-        @Arg('input') input: UpdatePlayerAnalysisInput
-    ) {
-        return this.analysisService.update(id, input);
-    }
-
+    // Add this mutation for single position
     @Mutation(() => Boolean)
-    async deletePlayerAnalysis(@Arg('id', () => Int) id: number) {
-        return this.analysisService.delete(id);
-    }
-
-    @Mutation(() => Boolean)
-    async updatePlayerAnalysisRanks() {
-        await this.analysisService.updateRanks();
-        return true;
-    }
-
-    @Mutation(() => Boolean)
-    async analyzeAllPlayers(): Promise<boolean> {
-        console.log('analyzeAllPlayers mutation called');
+    async calculatePositionAnalysis(@Arg("position") position: string): Promise<boolean> {
         try {
-            await this.analysisService.analyzeAllPlayers();
-            console.log('Analysis completed successfully');
+            await this.analysisService.calculatePreDraftScores(position);
             return true;
         } catch (error) {
-            console.error('Error in analyzeAllPlayers mutation:', error);
+            console.error('Error calculating position analysis:', error);
             return false;
         }
     }
 
-    @Mutation(() => PlayerAnalysis)
-    async analyzePlayer(
-        @Arg('playerId') playerId: number
-    ): Promise<PlayerAnalysis> {
-        return this.analysisService.analyzePlayer(playerId);
+    // Keep existing calculateAllPositionScores or use this renamed version
+    @Mutation(() => Boolean)
+    async calculateAllPositionsAnalysis(): Promise<boolean> {
+        try {
+            await this.analysisService.calculateAllPositionScores();
+            return true;
+        } catch (error) {
+            console.error('Error calculating all positions:', error);
+            return false;
+        }
     }
 
-    @FieldResolver(() => Float)  // Add this decorator if not present
+    // Add this query to check results
+    @Query(() => [PlayerAnalysis])
+    async getPlayerAnalysesByPosition(@Arg("position") position: string): Promise<PlayerAnalysis[]> {
+        return this.analysisService.getAnalysesByPosition(position as Position);
+    }
+
+    @FieldResolver(() => Float)
     async normalizedScore(@Root() analysis: PlayerAnalysis): Promise<number> {
         return analysis.normalizedScore;
     }

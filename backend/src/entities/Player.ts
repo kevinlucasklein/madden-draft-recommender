@@ -74,9 +74,9 @@ export class Player {
     @OneToMany(() => PlayerStats, stats => stats.player)
     stats?: PlayerStats[];
 
-    @Field(() => PlayerAnalysis)
-    @OneToOne(() => PlayerAnalysis, analysis => analysis.player)
-    analysis!: PlayerAnalysis;
+    @Field(() => PlayerAnalysis, { nullable: true })  // Add nullable: true here
+    @OneToOne(() => PlayerAnalysis, analysis => analysis.player, { nullable: true })
+    analysis?: PlayerAnalysis;
 
     // Add this to your existing Player entity
     @Field(() => DraftData, { nullable: true })

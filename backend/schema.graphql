@@ -21,15 +21,6 @@ input CreateDraftPickInput {
   sessionId: Int!
 }
 
-input CreateDraftRecommendationInput {
-  pickNumber: Int!
-  playerId: Int!
-  reason: String!
-  recommendationScore: Float!
-  roundNumber: Int!
-  sessionId: Int!
-}
-
 input CreateDraftSessionInput {
   draftPosition: Int!
   rosterNeeds: String!
@@ -41,20 +32,6 @@ input CreatePlayerAbilityInput {
   abilityOrder: Int!
   playerId: Int!
   ratingId: Int
-}
-
-input CreatePlayerAnalysisInput {
-  ageAdjustedScore: Float
-  bestPositionScore: Float
-  normalizedScore: Float
-  originalPositionScore: Float
-  playerId: Int!
-  playerType: String
-  positionChangeRecommended: Boolean
-  projectedPick: Int
-  rank: Int
-  ratingId: Int
-  suggestedPosition: String
 }
 
 input CreatePlayerInput {
@@ -165,6 +142,7 @@ A date-time string at UTC, such as 2007-12-03T10:15:30Z, compliant with the `dat
 scalar DateTimeISO
 
 type DraftData {
+  developmentTrait: Int!
   overall_pick: Int!
   player: Player!
   player_id: Int!
@@ -203,29 +181,19 @@ type DraftSession {
   status: String!
 }
 
-input GenerateRecommendationsInput {
-  isSnakeDraft: Boolean!
-  limit: Int!
-  pickNumber: Int!
-  roundNumber: Int!
-  sessionId: Int!
-}
-
 """
 The `JSONObject` scalar type represents JSON objects as specified by [ECMA-404](http://www.ecma-international.org/publications/files/ECMA-ST/ECMA-404.pdf).
 """
 scalar JSONObject
 
 type Mutation {
-  analyzeAllPlayers: Boolean!
-  analyzePlayer(playerId: Float!): PlayerAnalysis!
+  calculateAllPositionsAnalysis: Boolean!
+  calculatePositionAnalysis(position: String!): Boolean!
   createArchetype(input: CreateArchetypeInput!): Archetype!
   createDraftPick(input: CreateDraftPickInput!): DraftPick!
-  createDraftRecommendation(input: CreateDraftRecommendationInput!): DraftRecommendation!
   createDraftSession(input: CreateDraftSessionInput!): DraftSession!
   createPlayer(input: CreatePlayerInput!): Player!
   createPlayerAbility(input: CreatePlayerAbilityInput!): PlayerAbility!
-  createPlayerAnalysis(input: CreatePlayerAnalysisInput!): PlayerAnalysis!
   createPlayerRating(input: CreatePlayerRatingInput!): PlayerRating!
   createPlayerStats(input: CreatePlayerStatsInput!): PlayerStats!
   createPosition(input: CreatePositionInput!): Position!
@@ -233,26 +201,20 @@ type Mutation {
   createTeam(input: CreateTeamInput!): Team!
   deleteArchetype(id: Int!): Boolean!
   deleteDraftPick(id: Int!): Boolean!
-  deleteDraftRecommendation(id: Int!): Boolean!
   deleteDraftSession(id: Int!): Boolean!
   deletePlayer(id: Int!): Boolean!
   deletePlayerAbility(id: Int!): Boolean!
-  deletePlayerAnalysis(id: Int!): Boolean!
   deletePlayerRating(id: Int!): Boolean!
   deletePlayerStats(id: Int!): Boolean!
   deletePosition(id: Int!): Boolean!
   deleteRosterRequirement(id: Int!): Boolean!
   deleteTeam(id: Int!): Boolean!
-  generateRecommendations(input: GenerateRecommendationsInput!): [DraftRecommendation!]!
   reorderPlayerAbilities(abilityIds: [Int!]!, playerId: Int!): [PlayerAbility!]!
   updateArchetype(id: Int!, input: UpdateArchetypeInput!): Archetype!
   updateDraftPick(id: Int!, input: UpdateDraftPickInput!): DraftPick!
-  updateDraftRecommendation(id: Int!, input: UpdateDraftRecommendationInput!): DraftRecommendation!
   updateDraftSession(id: Int!, input: UpdateDraftSessionInput!): DraftSession!
   updatePlayer(id: Int!, input: UpdatePlayerInput!): Player!
   updatePlayerAbility(id: Int!, input: UpdatePlayerAbilityInput!): PlayerAbility!
-  updatePlayerAnalysis(id: Int!, input: UpdatePlayerAnalysisInput!): PlayerAnalysis!
-  updatePlayerAnalysisRanks: Boolean!
   updatePlayerRating(id: Int!, input: UpdatePlayerRatingInput!): PlayerRating!
   updatePlayerStats(id: Int!, input: UpdatePlayerStatsInput!): PlayerStats!
   updatePosition(id: Int!, input: UpdatePositionInput!): Position!
@@ -263,7 +225,7 @@ type Mutation {
 type Player {
   abilities: [PlayerAbility!]
   age: Int
-  analysis: PlayerAnalysis!
+  analysis: PlayerAnalysis
   archetype: Archetype
   college: String
   draftData: DraftData
@@ -292,27 +254,23 @@ type PlayerAbility {
 }
 
 type PlayerAnalysis {
-  ageAdjustedScore: Float
-  bestPosition: String
-  bestPositionScore: Float
+  adjustedScore: Float
+  ageMultiplier: Float!
+  basePositionTierScore: Float!
+  calculatedAt: DateTimeISO
+  developmentMultiplier: Float!
   id: Int!
   normalizedScore: Float!
-  originalPositionScore: Float
   player: Player!
-  playerType: String
-  positionChangeRecommended: Boolean
-  positionRanks: JSONObject
   positionScores: JSONObject!
-  primaryArchetype: String
+  positionSpecificRatings: JSONObject!
+  positionTier: Int!
+  preDraftCompositeScore: Float!
   projectedPick: Int
-  rank: Int
   rating: PlayerRating
-  secondaryArchetype: String
-  specialTraits: [String!]
-  suggestedPosition: String!
-  topPositions: [PositionScore!]
-  versatilePositions: [String!]
-  viablePositionCount: Int
+  schemeFitScore: Float!
+  schemeSpecificRatings: JSONObject!
+  versatilityBonus: Float!
   viablePositions: [ViablePosition!]
 }
 
@@ -394,11 +352,6 @@ type Position {
   type: String!
 }
 
-type PositionScore {
-  position: String!
-  score: Float!
-}
-
 type Query {
   activeDraftSession: DraftSession
   archetype(id: Int!): Archetype
@@ -406,17 +359,14 @@ type Query {
   draftPick(id: Int!): DraftPick
   draftPicks: [DraftPick!]!
   draftPicksBySession(sessionId: Int!): [DraftPick!]!
-  draftRecommendation(id: Int!): DraftRecommendation
-  draftRecommendations: [DraftRecommendation!]!
   draftSession(id: Int!): DraftSession
   draftSessions: [DraftSession!]!
+  getPlayerAnalysesByPosition(position: String!): [PlayerAnalysis!]!
   latestPlayerRating(playerId: Int!): PlayerRating
   player(id: Int): Player
   playerAbilities: [PlayerAbility!]!
   playerAbilitiesByPlayer(playerId: Int!): [PlayerAbility!]!
   playerAbility(id: Int!): PlayerAbility
-  playerAnalyses: [PlayerAnalysis!]!
-  playerAnalysis(id: Int!): PlayerAnalysis
   playerAnalysisByPlayer(playerId: Int!): PlayerAnalysis
   playerRating(id: Int!): PlayerRating
   playerRatings: [PlayerRating!]!
@@ -428,7 +378,6 @@ type Query {
   position(id: Int!): Position
   positions: [Position!]!
   positionsByType(type: String!): [Position!]!
-  recommendationsForPick(pickNumber: Int!, roundNumber: Int!, sessionId: Int!): [DraftRecommendation!]!
   rosterRequirement(id: Int!): RosterRequirement
   rosterRequirements: [RosterRequirement!]!
   rosterRequirementsByGroup(group: String!): [RosterRequirement!]!
@@ -470,11 +419,6 @@ input UpdateDraftPickInput {
   roundNumber: Int
 }
 
-input UpdateDraftRecommendationInput {
-  reason: String
-  recommendationScore: Float
-}
-
 input UpdateDraftSessionInput {
   rosterNeeds: String
   status: String
@@ -484,19 +428,6 @@ input UpdatePlayerAbilityInput {
   abilityLabel: String
   abilityOrder: Int
   ratingId: Int
-}
-
-input UpdatePlayerAnalysisInput {
-  ageAdjustedScore: Float
-  bestPositionScore: Float
-  normalizedScore: Float
-  originalPositionScore: Float
-  playerType: String
-  positionChangeRecommended: Boolean
-  projectedPick: Int
-  rank: Int
-  ratingId: Int
-  suggestedPosition: String
 }
 
 input UpdatePlayerInput {

@@ -5,27 +5,6 @@ import { PlayerRating } from './PlayerRating';
 import { GraphQLJSONObject } from 'graphql-type-json';
 
 @ObjectType()
-class PositionScore {
-    @Field()
-    position!: string;
-
-    @Field(() => Float)
-    score!: number;
-}
-
-@ObjectType()
-class ViablePosition {
-    @Field()
-    position!: string;
-
-    @Field(() => Float)
-    score!: number;
-
-    @Field(() => Float)
-    percentageAboveAverage!: number;
-}
-
-@ObjectType()
 @Entity('player_analysis')
 export class PlayerAnalysis {
     @Field(() => Int)
@@ -42,85 +21,85 @@ export class PlayerAnalysis {
     @JoinColumn({ name: 'rating_id' })
     rating?: PlayerRating;
 
-    @Field({ nullable: true })
-    @Column({ name: 'player_type' })
-    playerType?: string;
+    // Base Position Analysis
+    @Field(() => Float)
+    @Column('decimal', { name: 'normalized_score', precision: 10, scale: 2 })
+    normalizedScore!: number;
 
-    @Field(() => Float, { nullable: true })
-    @Column({ name: 'original_position_score' })
-    originalPositionScore?: number;
+    @Field(() => Float)
+    @Column({ name: 'base_position_tier_score' })
+    basePositionTierScore!: number;
 
-    @Field(() => Float, { nullable: true })
-    @Column({ name: 'best_position_score' })
-    bestPositionScore?: number;
+    @Field(() => Int)
+    @Column({ name: 'position_tier' })
+    positionTier!: number;
 
-    @Field()
-    @Column({ name: 'suggested_position' })  // This matches your DB column
-    suggestedPosition!: string;
+    // Age and Development
+    @Field(() => Float)
+    @Column({ name: 'age_multiplier' })
+    ageMultiplier!: number;
 
-    @Field({ nullable: true })
-    @Column({ name: 'position_change_recommended' })  // This matches your DB column
-    positionChangeRecommended?: boolean;
+    @Field(() => Float)
+    @Column({ name: 'development_multiplier' })
+    developmentMultiplier!: number;
 
-    @Field(() => Float, { nullable: true })
-    @Column({ name: 'age_adjusted_score' })
-    ageAdjustedScore?: number;
+    // Scheme Fit and Versatility
+    @Field(() => Float)
+    @Column({ name: 'scheme_fit_score' })
+    schemeFitScore!: number;
 
-    @Field(() => Int, { nullable: true })
-    @Column({ name: 'projected_pick' })
-    projectedPick?: number;
+    @Field(() => Float)
+    @Column({ name: 'versatility_bonus' })
+    versatilityBonus!: number;
 
-    @Field(() => Int, { nullable: true })
-    @Column()
-    rank?: number;
-
-    @Field(() => String, { nullable: true })  // Make it nullable
-    @Column({ name: 'best_position', nullable: true })
-    bestPosition?: string;
+    // Position Analysis
+    @Field(() => [ViablePosition], { nullable: true })
+    @Column('jsonb', { name: 'viable_positions' })
+    viablePositions?: ViablePosition[];
 
     @Field(() => GraphQLJSONObject)
     @Column('jsonb', { name: 'position_scores' })
     positionScores!: Record<string, number>;
 
-    @Field(() => Float)
-    @Column('decimal', { name: 'normalized_score', precision: 10, scale: 2 })
-    normalizedScore!: number;
-
-    @Field(() => [PositionScore], { nullable: true })  // Changed to array of PositionScore
-    @Column('jsonb', { name: 'top_positions', nullable: true })
-    topPositions?: PositionScore[];
-
+    // Draft Related
     @Field(() => Int, { nullable: true })
-    @Column({ name: 'viable_position_count', nullable: true })
-    viablePositionCount?: number;
+    @Column({ name: 'projected_pick' })
+    projectedPick?: number;
 
-    @Field(() => String, { nullable: true })  // Make it nullable
-    @Column({ name: 'primary_archetype', nullable: true })
-    primaryArchetype?: string;
+    @Field(() => Float)
+    @Column({ name: 'pre_draft_composite_score' })
+    preDraftCompositeScore!: number;
 
-    @Field(() => String, { nullable: true })
-    @Column({ name: 'secondary_archetype', nullable: true })
-    secondaryArchetype?: string;
+    // Scheme Specific Ratings
+    @Field(() => GraphQLJSONObject)
+    @Column('jsonb', { name: 'scheme_specific_ratings' })
+    schemeSpecificRatings!: {
+        gunBunchFit?: number;
+        nickelFit?: number;
+    };
 
-    @Field(() => [String], { nullable: true })  // Make it nullable
-    @Column('text', { array: true, name: 'special_traits', nullable: true })
-    specialTraits?: string[];
+    // Position Specific Ratings
+    @Field(() => GraphQLJSONObject)
+    @Column('jsonb', { name: 'position_specific_ratings' })
+    positionSpecificRatings!: Record<string, number>;
 
-    @Field(() => [String], { nullable: true })  // Make it nullable
-    @Column('text', { array: true, name: 'versatile_positions', nullable: true })
-    versatilePositions?: string[];
+    @Field(() => Date, { nullable: true })
+    @Column({ name: 'calculated_at', nullable: true })
+    calculatedAt?: Date;
 
-    @Field(() => GraphQLJSONObject, { nullable: true })
-    @Column('jsonb', { name: 'position_ranks', nullable: true })
-    positionRanks?: Record<string, number>;
+    @Field(() => Float, { nullable: true })
+    @Column({ name: 'adjusted_score', type: 'decimal', precision: 5, scale: 2, nullable: true })
+    adjustedScore: number;
+}
 
-    @Field(() => [ViablePosition], { nullable: true })
-    @Column('jsonb', { name: 'viable_positions', nullable: true })
-    viablePositions?: {
-        position: string;
-        score: number;
-        percentageAboveAverage: number;
-    }[];
+@ObjectType()
+class ViablePosition {
+    @Field()
+    position!: string;
 
+    @Field(() => Float)
+    score!: number;
 
+    @Field(() => Float)
+    percentageAboveAverage!: number;
 }

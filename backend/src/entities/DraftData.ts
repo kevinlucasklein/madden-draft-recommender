@@ -21,6 +21,10 @@ export class DraftData {
   @Column()
   round_pick: number;
 
+  @Field(() => Int)
+  @Column({ name: 'development_trait', type: 'int', default: 0 })
+  developmentTrait: number;
+
   @Field(() => Player)
   @OneToOne(() => Player, player => player.draftData)
   @JoinColumn({ name: "player_id" })

@@ -4,775 +4,496 @@ import { PlayerAnalysis } from '../entities/PlayerAnalysis';
 import { AppDataSource } from '../config/database';
 import { RedisService } from './RedisService';
 import { CreatePlayerAnalysisInput, UpdatePlayerAnalysisInput } from '../inputs/PlayerAnalysisInput';
-import { POSITION_STAT_WEIGHTS, POSITION_THRESHOLDS, determinePlayerArchetype } from '../config/positionStats';
+import { POSITION_STAT_THRESHOLDS, POSITION_TIER_THRESHOLDS, POSITION_STAT_WEIGHTS, Position } from '../config/positionStats';
 import { Player } from '../entities/Player';
 import { PlayerStats, PlayerStatsIndexed } from '../entities/PlayerStats';
 import fs from 'fs';
 import path from 'path';
 
-
-type StatWeight = {
-    [key: string]: number;
-};
-
-type PositionWeights = {
-    [key: string]: StatWeight;
-};
-
-const POSITION_GROUPS = {
-    EDGE: ['DE', 'LOLB', 'ROLB'],
-    INTERIOR_DL: ['DT', 'NT'],
-    INTERIOR_OL: ['C', 'G', 'LG', 'RG'],
-    TACKLE: ['LT', 'RT'],
-    SECONDARY: ['CB', 'FS', 'SS'],
-    LINEBACKER: ['MLB', 'LOLB', 'ROLB'],  // Some overlap with EDGE
-    SKILL: ['WR', 'RB', 'HB', 'FB', 'TE'],
-    SPECIALIST: ['K', 'P'],
-    QB: ['QB']  // Keep QB separate due to unique skillset
-};
-
-const GROUP_THRESHOLDS = {
-    INTERIOR_DL: 7,  // Lower for DTs due to high baseline
-    INTERIOR_OL: 7,  // Lower for interior OL positions
-    TACKLE: 7,       // Lower for OTs
-    EDGE: 10,         // Keep slightly higher for edge rushers
-    LINEBACKER: 10,   // Keep slightly higher for LBs
-    SECONDARY: 10,    // Keep higher for DBs due to specific skills
-    SKILL: 13,        // Keep higher for skill positions
-    SPECIALIST: 15,   // Keep very high for specialists
-    QB: 9           // Keep very high for QBs
-};
-// Define interfaces for our types
-interface PositionThreshold {
-    minWeight: number;
-    maxWeight?: number;  // Optional for positions like DT that only have min
-    penalty: number;
-}
-
-type PositionAgeFactor = {
-    QB: number;
-    K: number;
-    P: number;
-    RB: number;
-    FB: number;
-    WR: number;
-    CB: number;
-    SS: number;
-    FS: number;
-    TE: number;
-    DE: number;
-    LOLB: number;
-    ROLB: number;
-    DT: number;
-    NT: number;
-    C: number;
-    G: number;
-    LG: number;
-    RG: number;
-    LT: number;
-    RT: number;
-    MLB: number;
-};
-
-interface PlayerArchetype {
-    primaryType: string;
-    secondaryType?: string;
-    versatility: string[];
-    specialTraits: string[];
-}
-
 @Service()
 export class PlayerAnalysisService {
-    private analysisRepository: Repository<PlayerAnalysis>;
-    private playerRepository: Repository<Player>;
-    private redisService: RedisService;
-    private statsRepository: Repository<PlayerStats>;
-    private logFile: string;
+    private readonly playerAnalysisRepository: Repository<PlayerAnalysis>;
 
-    constructor() {
-        this.analysisRepository = AppDataSource.getRepository(PlayerAnalysis);
-        this.playerRepository = AppDataSource.getRepository(Player);
-        this.redisService = RedisService.getInstance();
-        this.statsRepository = AppDataSource.getRepository(PlayerStats);
-        
-        // Use absolute path from project root
-        const projectRoot = path.resolve(__dirname, '../../');
-        const logsDir = path.join(projectRoot, 'logs');
-        
-        try {
-            if (!fs.existsSync(logsDir)) {
-                fs.mkdirSync(logsDir, { recursive: true });
-            }
-            this.logFile = path.join(logsDir, 'player-analysis.log');
-            
-            // Test write access
-            fs.appendFileSync(this.logFile, `Service initialized at ${new Date().toISOString()}\n`);
-            console.log(`Logging to: ${this.logFile}`);
-        } catch (error) {
-            console.error('Error setting up log file:', error);
-            // Fallback to console logging if file logging fails
-            this.log = (message: string) => console.log(`[PlayerAnalysis] ${message}`);
-        }
+    constructor(
+        private readonly redisService: RedisService
+    ) {
+        this.playerAnalysisRepository = AppDataSource.getRepository(PlayerAnalysis);
     }
 
-    private log(message: string) {
-        const timestamp = new Date().toISOString();
-        const logMessage = `${timestamp}: ${message}\n`;
-        
-        try {
-            fs.appendFileSync(this.logFile, logMessage);
-        } catch (error) {
-            console.log(`[PlayerAnalysis] ${message}`);
-            console.error('Error writing to log file:', error);
-        }
-    }
-
-    private async calculatePositionAverages(): Promise<Record<string, number>> {
-        const analyses = await this.analysisRepository.find({
-            relations: {
-                player: {
-                    ratings: {
-                        position: true
-                    }
-                }
-            }
+    async findByPlayer(playerId: number): Promise<PlayerAnalysis | null> {
+        return this.playerAnalysisRepository.findOne({
+            where: { player: { id: playerId } },
+            relations: ['player', 'rating']
         });
-        
-        const positionAverages: Record<string, { sum: number; count: number }> = {};
-        
-        analyses.forEach(analysis => {
-            // Get position through ratings
-            const primaryPosition = analysis.player?.ratings?.[0]?.position?.name;
-            if (!primaryPosition) {
-                this.log(`Warning: No position found for player ${analysis.player?.id}`);
-                return;
-            }
-    
-            Object.entries(analysis.positionScores).forEach(([position, score]) => {
-                // Initialize if needed
-                if (!positionAverages[position]) {
-                    positionAverages[position] = { sum: 0, count: 0 };
-                }
-                
-                // Only include scores from players whose primary position is in the same group
-                const positionGroup = Object.entries(POSITION_GROUPS)
-                    .find(([_, positions]) => positions.includes(primaryPosition))?.[0];
-                const scorePositionGroup = Object.entries(POSITION_GROUPS)
-                    .find(([_, positions]) => positions.includes(position))?.[0];
-                    
-                if (positionGroup === scorePositionGroup) {
-                    positionAverages[position].sum += score;
-                    positionAverages[position].count++;
-                }
-            });
-        });
-    
-        // Calculate final averages
-        const averages: Record<string, number> = {};
-        Object.entries(positionAverages).forEach(([position, { sum, count }]) => {
-            averages[position] = count > 0 ? sum / count : 0;
-        });
-    
-        this.log(`Position group averages calculated: ${JSON.stringify(averages)}`);
-        return averages;
-    }
-    
-    private async updateViablePositions(): Promise<void> {
-        try {
-            const averages = await this.calculatePositionAverages();
-            const analyses = await this.analysisRepository.find({
-                relations: {
-                    player: {
-                        ratings: {
-                            position: true
-                        }
-                    }
-                }
-            });
-            
-            const updates = analyses.map(analysis => {
-                const primaryPosition = analysis.player?.ratings?.[0]?.position?.name;
-                if (!primaryPosition) {
-                    this.log(`Warning: No position found for player ${analysis.player?.id}`);
-                    return {
-                        id: analysis.id,
-                        viablePositions: [],
-                        viablePositionCount: 0
-                    };
-                }
-    
-                const primaryGroup = Object.entries(POSITION_GROUPS)
-                    .find(([_, positions]) => positions.includes(primaryPosition))?.[0];
-    
-                const viablePositions = Object.entries(analysis.positionScores)
-                    .map(([position, score]) => {
-                        const positionGroup = Object.entries(POSITION_GROUPS)
-                            .find(([_, positions]) => positions.includes(position))?.[0];
-                        const percentageAboveAverage = ((score - (averages[position] || 0)) / (averages[position] || 1)) * 100;
-                        
-                        // Get base threshold from position group
-                        let threshold = GROUP_THRESHOLDS[positionGroup as keyof typeof GROUP_THRESHOLDS] || 20;
-                        
-                        // Adjust threshold based on relationship
-                        if (primaryGroup === positionGroup) {
-                            threshold -= 5; // Even lower threshold for same group
-                        } else if (
-                            (primaryGroup === 'EDGE' && positionGroup === 'LINEBACKER') ||
-                            (primaryGroup === 'LINEBACKER' && positionGroup === 'EDGE') ||
-                            (primaryGroup === 'INTERIOR_OL' && positionGroup === 'TACKLE') ||
-                            (primaryGroup === 'TACKLE' && positionGroup === 'INTERIOR_OL')
-                        ) {
-                            threshold -= 3; // Lower threshold for related groups
-                        }
-    
-                        return {
-                            position,
-                            score,
-                            percentageAboveAverage,
-                            isViable: percentageAboveAverage >= threshold
-                        };
-                    })
-                    .filter(pos => pos.isViable)
-                    .sort((a, b) => b.percentageAboveAverage - a.percentageAboveAverage);
-    
-                return {
-                    id: analysis.id,
-                    viablePositions,
-                    viablePositionCount: viablePositions.length
-                };
-            });
-    
-            // Log the first update to verify the data
-            this.log(`Sample update object: ${JSON.stringify(updates[0])}`);
-    
-            // Use query builder for explicit update
-            for (const update of updates) {
-                await this.analysisRepository
-                    .createQueryBuilder()
-                    .update(PlayerAnalysis)
-                    .set({
-                        viablePositions: update.viablePositions,
-                        viablePositionCount: update.viablePositionCount
-                    })
-                    .where("id = :id", { id: update.id })
-                    .execute();
-            }
-    
-            await this.clearAnalysisCache();
-            
-            // Verify the update worked
-            const verificationCheck = await this.analysisRepository.findOne({
-                where: { id: updates[0].id }
-            });
-            this.log(`Verification check: ${JSON.stringify(verificationCheck?.viablePositions)}`);
-            
-            this.log('Viable positions saved to database successfully');
-        } catch (error) {
-            this.log(`Error updating viable positions: ${error}`);
-            throw error;
-        }
     }
 
-    private async clearAnalysisCache(id?: number, playerId?: number) {
-        if (id) {
-            await this.redisService.del(`analysis:${id}`);
-        }
-        if (playerId) {
-            await this.redisService.del(`analysis:player:${playerId}`);
-        }
-        await this.redisService.del('analyses:all');
-    }
-
-    
-    private calculatePositionScore(
-        stats: PlayerStatsIndexed, 
-        position: keyof typeof POSITION_STAT_WEIGHTS, 
-        player: Player
-    ): number {
+    // New normalization methods
+    private async normalizePositionScores(players: Player[], position: Position): Promise<Map<number, number>> {
+        const scores = new Map<number, number>();
         const weights = POSITION_STAT_WEIGHTS[position];
-        if (!weights) {
-            this.log(`No weights found for position: ${position}`);
-            return 0;
-        }
-    
-        let totalScore = 0;
-        let totalWeight = 0;
-        const missingStats: string[] = [];
-    
-        // Calculate base score
-        for (const [stat, weight] of Object.entries(weights)) {
-            const statValue = stats[stat];
-            if (typeof statValue === 'number') {  // Only use number values
-                totalScore += statValue * weight;
-                totalWeight += weight;
-            } else {
-                missingStats.push(stat);
-            }
-        }
-    
-        let score = totalWeight > 0 ? (totalScore / totalWeight) : 0;
-    
-        // Apply body type adjustments
-        const threshold = POSITION_THRESHOLDS[position] as PositionThreshold;
-        if (threshold && player.weight) {
-            let shouldPenalize = false;
-            
-            if (threshold.minWeight && player.weight < threshold.minWeight) {
-                shouldPenalize = true;
-                this.log(`${player.firstName} ${player.lastName} too light for ${position}: ${player.weight} < ${threshold.minWeight}`);
+
+        if (!weights) return scores;
+
+        for (const player of players) {
+            let rawScore = 0;
+            if (!player.stats || !Array.isArray(player.stats) || player.stats.length === 0) {
+                continue;
             }
             
-            if ('maxWeight' in threshold && threshold.maxWeight && player.weight > threshold.maxWeight) {
-                shouldPenalize = true;
-                this.log(`${player.firstName} ${player.lastName} too heavy for ${position}: ${player.weight} > ${threshold.maxWeight}`);
+            const playerStats = player.stats[0] as PlayerStats;
+            
+            for (const [stat, weight] of Object.entries(weights)) {
+                if (stat in playerStats && typeof playerStats[stat] === 'number') {
+                    const statValue = playerStats[stat as keyof PlayerStats];
+                    if (typeof statValue === 'number') {
+                        rawScore += statValue * weight;
+                    }
+                }
             }
-    
-            if (shouldPenalize) {
-                score *= (1 - threshold.penalty);
-                this.log(`Applied ${threshold.penalty * 100}% penalty to ${position} score for ${player.firstName} ${player.lastName}`);
-            }
+
+            const bonus = this.checkPositionSpecificBonuses(playerStats, position);
+            rawScore *= bonus;
+
+            scores.set(player.id, rawScore);
         }
-    
-        // Apply age adjustment if age is available
-        if (typeof player.age === 'number') {
-            score = this.calculateAgeAdjustedScore(score, player.age, position);
-            this.log(`Age-adjusted score for ${player.firstName} ${player.lastName} at ${position}: ${score}`);
-        } else {
-            this.log(`No age data available for ${player.firstName} ${player.lastName}, skipping age adjustment`);
+
+        // Z-score normalization
+        const values = Array.from(scores.values());
+        if (values.length === 0) return scores;
+        
+        const mean = values.reduce((a, b) => a + b) / values.length;
+        const stdDev = Math.sqrt(
+            values.map(x => Math.pow(x - mean, 2))
+                  .reduce((a, b) => a + b) / values.length
+        );
+
+        // Final normalization with position-specific scaling
+        for (const [playerId, score] of scores) {
+            const zScore = (score - mean) / stdDev;
+            const normalizedScore = Math.min(100, Math.max(0, 50 + (zScore * 15)));
+            scores.set(playerId, normalizedScore);
         }
-    
-        return score;
+
+        return scores;
     }
 
-    private calculateAgeAdjustedScore(rawScore: number, age: number, position: string): number {
-        const AGE_MODIFIERS = {
-            YOUNG_PROSPECT: { maxAge: 23, modifier: 1.08 },
-            DEVELOPING: { maxAge: 26, modifier: 1.04 },
-            PRIME: { maxAge: 29, modifier: 1.0 },
-            VETERAN: { maxAge: 32, modifier: 0.97 },
-            AGING: { maxAge: 35, modifier: 0.94 },
-            TWILIGHT: { maxAge: Infinity, modifier: 0.90 }
-        };
+    private checkPositionSpecificBonuses(stats: PlayerStats, position: Position): number {
+        let bonus = 1.0;
     
-        // Expanded position factors based on physical demands and longevity
-        const POSITION_AGE_FACTORS: PositionAgeFactor = {
-            // Skill Positions (High Impact/Speed Dependent)
-            RB: 0.96,  // Running backs decline fastest due to physical toll
-            FB: 0.97,  // Fullbacks similar to RB but slightly better longevity
-            WR: 0.98,  // Speed-dependent but less contact than RB
-            CB: 0.98,  // Heavily dependent on speed and agility
-            
-            // Hybrid Positions (Mixed Physical/Skill)
-            SS: 0.99,  // Strong safeties face more physical demands
-            FS: 0.99,  // Free safeties slightly better longevity than SS
-            TE: 0.99,  // Tight ends balance receiving and blocking
-            
-            // Edge Positions (Power/Speed Mix)
-            DE: 0.99,  // Edge rushers rely on explosion and power
-            LOLB: 0.99,
-            ROLB: 0.99,
-            
-            // Interior Positions (Power/Technique)
-            DT: 1.00,  // Interior linemen rely more on technique
-            NT: 1.00,
-            C: 1.00,   // Centers rely on technique and mental game
-            G: 1.00,   // Guards similar to center
-            LG: 1.00,
-            RG: 1.00,
-            
-            // Tackle Positions
-            LT: 1.00,  // Tackles balance technique and athleticism
-            RT: 1.00,
-            
-            // Linebacker
-            MLB: 0.99, // Middle linebackers balance physical/mental
-            
-            // Low Impact Positions (Skill/Mental Focus)
-            QB: 1.03,  // Quarterbacks often improve with experience
-            K: 1.03,   // Kickers have longest careers
-            P: 1.03    // Punters similar to kickers
-        };
+        if (!(position in POSITION_STAT_THRESHOLDS)) {
+            return bonus;
+        }
     
-        // Get age modifier
-        let modifier = AGE_MODIFIERS.TWILIGHT.modifier;
-        for (const bracket of Object.values(AGE_MODIFIERS)) {
-            if (age <= bracket.maxAge) {
-                modifier = bracket.modifier;
+        switch(position) {
+            case 'QB': {
+                const thresholds = POSITION_STAT_THRESHOLDS.QB.elite;
+                if (stats.throwPower !== undefined && 
+                    stats.throwAccuracyShort !== undefined && 
+                    stats.throwAccuracyMid !== undefined &&
+                    stats.throwPower >= thresholds.throwPower &&
+                    stats.throwAccuracyShort >= thresholds.throwAccuracyShort &&
+                    stats.throwAccuracyMid >= thresholds.throwAccuracyMid) {
+                    bonus += 0.1;
+                }
+    
+                const mobilityThresholds = POSITION_STAT_THRESHOLDS.QB.goodMobility;
+                if (stats.speed !== undefined && 
+                    stats.acceleration !== undefined &&
+                    stats.speed >= mobilityThresholds.speed &&
+                    stats.acceleration >= mobilityThresholds.acceleration) {
+                    bonus += 0.05;
+                }
+                break;
+            }
+            case 'HB': {
+                const thresholds = POSITION_STAT_THRESHOLDS.RB.elite;
+                if (stats.speed !== undefined && 
+                    stats.acceleration !== undefined &&
+                    stats.speed >= thresholds.speed &&
+                    stats.acceleration >= thresholds.acceleration) {
+                    bonus += 0.1;
+                }
+    
+                const powerThresholds = POSITION_STAT_THRESHOLDS.RB.powerBack;
+                if (stats.trucking !== undefined && 
+                    stats.breakTackle !== undefined &&
+                    stats.trucking >= powerThresholds.trucking &&
+                    stats.breakTackle >= powerThresholds.breakTackle) {
+                    bonus += 0.05;
+                }
+                break;
+            }
+            case 'FB': {
+                const thresholds = POSITION_STAT_THRESHOLDS.FB.elite;
+                if (stats.impactBlocking !== undefined && 
+                    stats.leadBlock !== undefined &&
+                    stats.impactBlocking >= thresholds.impactBlocking &&
+                    stats.leadBlock >= thresholds.leadBlock) {
+                    bonus += 0.1;
+                }
+    
+                const receivingThresholds = POSITION_STAT_THRESHOLDS.FB.receiving;
+                if (stats.catching !== undefined && 
+                    stats.shortRouteRunning !== undefined &&
+                    stats.catching >= receivingThresholds.catching &&
+                    stats.shortRouteRunning >= receivingThresholds.shortRouteRunning) {
+                    bonus += 0.05;
+                }
+                break;
+            }
+            case 'WR': {
+                const thresholds = POSITION_STAT_THRESHOLDS.WR.elite;
+                if (stats.speed !== undefined && 
+                    stats.catching !== undefined &&
+                    stats.speed >= thresholds.speed &&
+                    stats.catching >= thresholds.catching) {
+                    bonus += 0.1;
+                }
+    
+                if (stats.shortRouteRunning !== undefined && 
+                    stats.mediumRouteRunning !== undefined &&
+                    stats.shortRouteRunning >= thresholds.shortRouteRunning &&
+                    stats.mediumRouteRunning >= thresholds.mediumRouteRunning) {
+                    bonus += 0.05;
+                }
+                break;
+            }
+            case 'TE': {
+                const thresholds = POSITION_STAT_THRESHOLDS.TE.elite;
+                if (stats.catching !== undefined && 
+                    stats.shortRouteRunning !== undefined &&
+                    stats.catching >= thresholds.catching &&
+                    stats.shortRouteRunning >= thresholds.shortRouteRunning) {
+                    bonus += 0.1;
+                }
+    
+                const blockingThresholds = POSITION_STAT_THRESHOLDS.TE.blocking;
+                if (stats.runBlock !== undefined && 
+                    stats.impactBlocking !== undefined &&
+                    stats.runBlock >= blockingThresholds.runBlock &&
+                    stats.impactBlocking >= blockingThresholds.impactBlocking) {
+                    bonus += 0.05;
+                }
+                break;
+            }
+            case 'LT':
+            case 'RT': {
+                const thresholds = POSITION_STAT_THRESHOLDS.OT.elite;
+                if (stats.passBlockPower !== undefined && 
+                    stats.passBlockFinesse !== undefined &&
+                    stats.passBlockPower >= thresholds.passBlockPower &&
+                    stats.passBlockFinesse >= thresholds.passBlockFinesse) {
+                    bonus += 0.1;
+                }
+    
+                const runBlockThresholds = POSITION_STAT_THRESHOLDS.OT.runBlocking;
+                if (stats.runBlock !== undefined && 
+                    stats.impactBlocking !== undefined &&
+                    stats.runBlock >= runBlockThresholds.runBlock &&
+                    stats.impactBlocking >= runBlockThresholds.impactBlocking) {
+                    bonus += 0.05;
+                }
+                break;
+            }
+            case 'LG':
+            case 'RG':
+            case 'C': {
+                const thresholds = POSITION_STAT_THRESHOLDS.IOL.elite;
+                if (stats.runBlock !== undefined && 
+                    stats.impactBlocking !== undefined &&
+                    stats.runBlock >= thresholds.runBlock &&
+                    stats.impactBlocking >= thresholds.impactBlocking) {
+                    bonus += 0.1;
+                }
+    
+                const passBlockThresholds = POSITION_STAT_THRESHOLDS.IOL.passBlocking;
+                if (stats.passBlockPower !== undefined && 
+                    stats.passBlockFinesse !== undefined &&
+                    stats.passBlockPower >= passBlockThresholds.passBlockPower &&
+                    stats.passBlockFinesse >= passBlockThresholds.passBlockFinesse) {
+                    bonus += 0.05;
+                }
+                break;
+            }
+            case 'DE': {
+                const thresholds = POSITION_STAT_THRESHOLDS.DE.elite;
+                if (stats.powerMoves !== undefined && 
+                    stats.finesseMoves !== undefined &&
+                    stats.powerMoves >= thresholds.powerMoves &&
+                    stats.finesseMoves >= thresholds.finesseMoves) {
+                    bonus += 0.1;
+                }
+    
+                const athleticThresholds = POSITION_STAT_THRESHOLDS.DE.athletic;
+                if (stats.speed !== undefined && 
+                    stats.acceleration !== undefined &&
+                    stats.speed >= athleticThresholds.speed &&
+                    stats.acceleration >= athleticThresholds.acceleration) {
+                    bonus += 0.05;
+                }
+                break;
+            }
+            case 'DT': {
+                const thresholds = POSITION_STAT_THRESHOLDS.DT.elite;
+                if (stats.blockShedding !== undefined && 
+                    stats.powerMoves !== undefined &&
+                    stats.blockShedding >= thresholds.blockShedding &&
+                    stats.powerMoves >= thresholds.powerMoves) {
+                    bonus += 0.1;
+                }
+    
+                const passRushThresholds = POSITION_STAT_THRESHOLDS.DT.passRush;
+                if (stats.finesseMoves !== undefined && 
+                    stats.acceleration !== undefined &&
+                    stats.finesseMoves >= passRushThresholds.finesseMoves &&
+                    stats.acceleration >= passRushThresholds.acceleration) {
+                    bonus += 0.05;
+                }
+                break;
+            }
+            case 'MLB':
+            case 'LOLB':
+            case 'ROLB': {
+                const thresholds = POSITION_STAT_THRESHOLDS.LB.elite;
+                if (stats.tackle !== undefined && 
+                    stats.pursuit !== undefined &&
+                    stats.tackle >= thresholds.tackle &&
+                    stats.pursuit >= thresholds.pursuit) {
+                    bonus += 0.1;
+                }
+    
+                const coverageThresholds = POSITION_STAT_THRESHOLDS.LB.coverage;
+                if (stats.zoneCoverage !== undefined && 
+                    stats.speed !== undefined &&
+                    stats.zoneCoverage >= coverageThresholds.zoneCoverage &&
+                    stats.speed >= coverageThresholds.speed) {
+                    bonus += 0.05;
+                }
+                break;
+            }
+            case 'CB': {
+                const thresholds = POSITION_STAT_THRESHOLDS.CB.elite;
+                if (stats.speed !== undefined && 
+                    stats.manCoverage !== undefined &&
+                    stats.speed >= thresholds.speed &&
+                    stats.manCoverage >= thresholds.manCoverage) {
+                    bonus += 0.1;
+                }
+    
+                const manThresholds = POSITION_STAT_THRESHOLDS.CB.manSpecialist;
+                if (stats.manCoverage !== undefined && 
+                    stats.press !== undefined &&
+                    stats.manCoverage >= manThresholds.manCoverage &&
+                    stats.press >= manThresholds.press) {
+                    bonus += 0.05;
+                }
+                break;
+            }
+            case 'FS':
+            case 'SS': {
+                const thresholds = POSITION_STAT_THRESHOLDS.S.elite;
+                if (stats.zoneCoverage !== undefined && 
+                    stats.pursuit !== undefined &&
+                    stats.zoneCoverage >= thresholds.zoneCoverage &&
+                    stats.pursuit >= thresholds.pursuit) {
+                    bonus += 0.1;
+                }
+    
+                const runSupportThresholds = POSITION_STAT_THRESHOLDS.S.runSupport;
+                if (stats.tackle !== undefined && 
+                    stats.hitPower !== undefined &&
+                    stats.tackle >= runSupportThresholds.tackle &&
+                    stats.hitPower >= runSupportThresholds.hitPower) {
+                    bonus += 0.05;
+                }
+                break;
+            }
+            case 'K':
+            case 'P': {
+                const thresholds = POSITION_STAT_THRESHOLDS.K.elite;
+                if (stats.kickPower !== undefined && 
+                    stats.kickAccuracy !== undefined &&
+                    stats.kickPower >= thresholds.kickPower &&
+                    stats.kickAccuracy >= thresholds.kickAccuracy) {
+                    bonus += 0.1;
+                }
                 break;
             }
         }
     
-        // Type-safe position factor lookup
-        const positionFactor = (POSITION_AGE_FACTORS as Record<string, number>)[position] || 1.0;
-        const finalModifier = modifier * positionFactor;
-    
-        this.log(`Age adjustment for ${position}: Base modifier ${modifier}, Position factor ${positionFactor}, Final ${finalModifier}`);
-        return rawScore * finalModifier;
+        return bonus;
     }
 
-    private async updatePositionRanks(): Promise<void> {
+    private assignTier(normalizedScore: number, position: Position): number {
+        const thresholds = POSITION_TIER_THRESHOLDS[position];
+        if (!thresholds) return this.assignDefaultTier(normalizedScore);
+
+        if (normalizedScore >= thresholds.tier1) return 1;
+        if (normalizedScore >= thresholds.tier2) return 2;
+        if (normalizedScore >= thresholds.tier3) return 3;
+        if (normalizedScore >= thresholds.tier4) return 4;
+        return 5;
+    }
+
+    private assignDefaultTier(normalizedScore: number): number {
+        if (normalizedScore >= 80) return 1;
+        if (normalizedScore >= 65) return 2;
+        if (normalizedScore >= 50) return 3;
+        if (normalizedScore >= 35) return 4;
+        return 5;
+    }
+
+    private calculateAgeMultiplier(age: number | undefined): number {
+        // Default to worst multiplier if age is undefined
+        if (age === undefined) return 0.8;
+        
+        if (age <= 23) return 1.2;
+        if (age <= 26) return 1.1;
+        if (age <= 29) return 1.0;
+        if (age <= 32) return 0.9;
+        return 0.8;  // 33+
+    }
+
+    private calculateDevTraitMultiplier(devTrait: number): number {
+        switch(devTrait) {
+            case 3: return 1.3;  // X-Factor: +0.3
+            case 2: return 1.2;  // Superstar: +0.2
+            case 1: return 1.1;  // Star: +0.1
+            case 0:
+            default: return 1.0; // Normal: +0
+        }
+    }
+
+    async calculatePreDraftScores(positionCode: string): Promise<void> {
+        const queryRunner = AppDataSource.createQueryRunner();
+        await queryRunner.connect();
+        await queryRunner.startTransaction();
+    
         try {
-            // Get all analyses
-            const analyses = await this.analysisRepository.find();
+            console.log('Starting query for position:', positionCode);
             
-            // Group analyses by position scores
-            const positionGroups: Record<string, PlayerAnalysis[]> = {};
-            
-            analyses.forEach(analysis => {
-                Object.entries(analysis.positionScores).forEach(([position, score]) => {
-                    if (!positionGroups[position]) {
-                        positionGroups[position] = [];
-                    }
-                    positionGroups[position].push(analysis);
-                });
-            });
-    
-            // Sort and rank each position group
-            const updates = analyses.map(analysis => {
-                const positionRanks: Record<string, number> = {};
-                
-                Object.entries(analysis.positionScores).forEach(([position, score]) => {
-                    const positionList = positionGroups[position];
-                    // Sort by score descending
-                    positionList.sort((a, b) => 
-                        (b.positionScores[position] || 0) - (a.positionScores[position] || 0)
-                    );
-                    // Find index of current analysis
-                    const rank = positionList.findIndex(a => a.id === analysis.id) + 1;
-                    positionRanks[position] = rank;
-                });
-    
-                return {
-                    ...analysis,
-                    positionRanks
-                };
-            });
-    
-            // Batch save all updates
-            await this.analysisRepository.save(updates);
-            await this.clearAnalysisCache();
-            
-            this.log('Position ranks updated successfully');
-        } catch (error) {
-            this.log(`Error updating position ranks: ${error}`);
-            throw error;
-        }
-    }
-
-    async analyzePlayer(playerId: number): Promise<PlayerAnalysis> {
-        // Cache the position weights lookup
-        const positionWeights = Object.entries(POSITION_STAT_WEIGHTS);
-        
-        const player = await this.playerRepository
-            .createQueryBuilder('player')
-            .leftJoinAndSelect('player.ratings', 'ratings')
-            .leftJoinAndSelect('ratings.position', 'position')
-            .leftJoinAndSelect('player.stats', 'stats')
-            .where('player.id = :id', { id: playerId })
-            .getOne();
-    
-        if (!player) {
-            throw new Error('Player not found');
-        }
-    
-        if (!player.ratings?.[0]?.position) {  // Check position through ratings
-            throw new Error(`No position found for player ${playerId}`);
-        }
-    
-        if (!player.stats || player.stats.length === 0) {
-            throw new Error(`No stats found for player ${playerId}`);
-        }
-    
-        const currentStats = player.stats[player.stats.length - 1];
-    
-        // Calculate scores for each position more efficiently
-        const positionScores: Record<string, number> = {};
-        const calculations = positionWeights.map(([position, weights]) => {
-            const score = this.calculatePositionScore(
-                currentStats,
-                position as keyof typeof POSITION_STAT_WEIGHTS,
-                player
-            );
-            return [position, score] as [string, number];
-        });
-    
-        // Assign all scores at once
-        calculations.forEach(([position, score]) => {
-            positionScores[position] = score;
-        });
-        
-        const sortedPositions = Object.entries(positionScores)
-            .sort(([, scoreA], [, scoreB]) => scoreB - scoreA)
-            .map(([position, score]) => ({
-                position,
-                score
-            }));
-        
-        const bestPosition = sortedPositions[0].position;
-        // Use the score directly from positionScores to maintain precision
-        const bestScore = positionScores[bestPosition];
-        
-        const topPositions = sortedPositions.filter(pos => 
-            pos.score > Math.max(50, bestScore * 0.75)
-        );
-
-        this.log(`Best position: ${bestPosition} (${bestScore})`);
-        this.log(`Viable positions: ${topPositions.map(p => `${p.position}:${p.score}`).join(', ')}`);
-    
-        const archetype = determinePlayerArchetype(currentStats, bestPosition);
-    
-        // Batch the database operations
-        const analysis = await this.analysisRepository.save({
-            id: (await this.findByPlayer(playerId))?.id,
-            player: { id: playerId },
-            positionScores,
-            bestPosition,
-            normalizedScore: bestScore,
-            primaryArchetype: archetype.primaryType,
-            secondaryArchetype: archetype.secondaryType,
-            versatilePositions: archetype.versatility,
-            specialTraits: archetype.specialTraits,
-            topPositions,
-            viablePositionCount: topPositions.length
-        });
-
-        await this.clearAnalysisCache(analysis.id, playerId);
-        return analysis;
-    }
-
-    async analyzeAllPlayers(): Promise<void> {
-        try {
-            // Clear the log file before starting
-            fs.writeFileSync(this.logFile, '');
-            console.log('Starting analysis of all players...');
-            
-            // Get all players in one query with necessary relations
-            const players = await this.playerRepository
+            const players = await AppDataSource
+                .getRepository(Player)
                 .createQueryBuilder('player')
-                .leftJoinAndSelect('player.ratings', 'ratings')
-                .leftJoinAndSelect('ratings.position', 'position')
-                .leftJoinAndSelect('player.stats', 'stats')
+                .innerJoinAndSelect('player.stats', 'stats')
+                .innerJoinAndSelect('player.ratings', 'rating')
+                .innerJoin('rating.position', 'position')
+                .leftJoinAndSelect('player.draftData', 'draftData')
+                .where('position.short_label = :positionCode', { positionCode })
                 .getMany();
+    
+            console.log(`Found ${players.length} players with position ${positionCode}`);
             
-            this.log(`Found ${players.length} players to analyze`);
-            console.log(`Found ${players.length} players to analyze`);
-            
-            // Step 1: Analyze all players to get their position scores
-            const BATCH_SIZE = 50;
-            const batches = [];
-            
-            for (let i = 0; i < players.length; i += BATCH_SIZE) {
-                const batch = players.slice(i, i + BATCH_SIZE);
-                batches.push(batch);
+            const normalizedScores = await this.normalizePositionScores(players, positionCode as Position);
+            const adjustedScores = new Map<number, number>();
+    
+            // First pass: calculate all adjusted scores
+            for (const [playerId, normalizedScore] of normalizedScores) {
+                const player = players.find(p => p.id === playerId);
+                if (!player) continue;
+    
+                const ageMultiplier = this.calculateAgeMultiplier(player.age);
+                const devMultiplier = this.calculateDevTraitMultiplier(player.draftData?.developmentTrait ?? 0);
+                const adjustedScore = normalizedScore * ageMultiplier * devMultiplier;
+                
+                adjustedScores.set(playerId, adjustedScore);
             }
     
-            for (const batch of batches) {
-                await Promise.all(batch.map(async (player) => {
-                    try {
-                        console.log(`Analyzing player ${player.id}: ${player.firstName} ${player.lastName}`);
-                        return await this.analyzePlayer(player.id);
-                    } catch (err) {
-                        const error = err as Error;
-                        this.log(`Error analyzing player ${player.id}: ${error.message}`);
-                        console.error(`Error analyzing player ${player.id}:`, error);
-                        return null;
-                    }
-                }));
+            // Re-normalize adjusted scores
+            const values = Array.from(adjustedScores.values());
+            if (values.length === 0) return;
+    
+            const mean = values.reduce((a, b) => a + b) / values.length;
+            const stdDev = Math.sqrt(
+                values.map(x => Math.pow(x - mean, 2))
+                      .reduce((a, b) => a + b) / values.length
+            );
+    
+            const analysisUpdates: PlayerAnalysis[] = [];
+    
+            // Second pass: create analysis objects with re-normalized scores
+            for (const [playerId, adjustedScore] of adjustedScores) {
+                const player = players.find(p => p.id === playerId);
+                if (!player) continue;
+    
+                const baseScore = normalizedScores.get(playerId) || 0;
+                const ageMultiplier = this.calculateAgeMultiplier(player.age);
+                const devMultiplier = this.calculateDevTraitMultiplier(player.draftData?.developmentTrait ?? 0);
                 
-                await new Promise(resolve => setTimeout(resolve, 50));
+                let analysis = await this.findByPlayer(playerId);
+                if (!analysis) {
+                    analysis = new PlayerAnalysis();
+                    analysis.player = { id: playerId } as Player;
+                }
+    
+                // Store base position evaluation
+                analysis.normalizedScore = baseScore;
+                analysis.basePositionTierScore = baseScore;
+                
+                // Store multipliers for reference
+                analysis.ageMultiplier = ageMultiplier;
+                analysis.developmentMultiplier = devMultiplier;
+                
+                // Calculate final normalized score
+                const zScore = (adjustedScore - mean) / stdDev;
+                analysis.adjustedScore = Math.min(100, Math.max(0, 50 + (zScore * 15)));
+                
+                // Assign tier based on final score
+                analysis.positionTier = this.assignTier(analysis.adjustedScore, positionCode as Position);
+                analysis.calculatedAt = new Date();
+    
+                analysisUpdates.push(analysis);
             }
-        
-            // Step 2: Update ranks and position-specific data
-            try {
-                this.log('Starting post-analysis updates...');
-                
-                // Update overall ranks first
-                await this.updateRanks();
-                this.log('Overall ranks updated');
-                
-                // Update position-specific ranks
-                await this.updatePositionRanks();
-                this.log('Position ranks updated');
-                
-                // Now that we have all scores, calculate viable positions
-                await this.updateViablePositions();
-                this.log('Viable positions updated');
-                
-                this.log('All post-analysis updates completed successfully');
-            } catch (err) {
-                const error = err as Error;
-                this.log(`Error in post-analysis updates: ${error.message}`);
-                console.error('Error in post-analysis updates:', error);
-            }
+    
+            await queryRunner.manager.save(PlayerAnalysis, analysisUpdates);
+            await queryRunner.commitTransaction();
             
-            this.log('Analysis complete');
-            console.log('Analysis complete');
+            console.log(`Successfully updated ${analysisUpdates.length} player analyses`);
+    
         } catch (error) {
-            console.error('Error in analyzeAllPlayers:', error);
+            await queryRunner.rollbackTransaction();
+            console.error('Error details:', error);
             throw error;
+        } finally {
+            await queryRunner.release();
         }
     }
 
-    async findAll(): Promise<PlayerAnalysis[]> {
-        try {
-            const cacheKey = 'analyses:all';
-            const cached = await this.redisService.get<PlayerAnalysis[]>(cacheKey);
-            
-            if (cached) {
-                console.log('Returning cached player analyses');
-                return cached;
-            }
-
-            console.log('Fetching player analyses from database');
-            const analyses = await this.analysisRepository.find({
-                relations: {
-                    player: true,
-                    rating: true
-                },
-                order: {
-                    rank: 'ASC'
-                }
-            });
-
-            await this.redisService.set(cacheKey, analyses);
-            return analyses;
-        } catch (error) {
-            console.error('Error in findAll:', error);
-            throw error;
+    async calculateAllPositionScores(): Promise<void> {
+        const positions = Object.keys(POSITION_STAT_WEIGHTS) as Array<keyof typeof POSITION_STAT_WEIGHTS>;
+        for (const position of positions) {
+            await this.calculatePreDraftScores(position);
         }
     }
 
-    async findOne(id: number): Promise<PlayerAnalysis | null> {
-        try {
-            const cacheKey = `analysis:${id}`;
-            const cached = await this.redisService.get<PlayerAnalysis>(cacheKey);
 
-            if (cached) return cached;
-
-            const analysis = await this.analysisRepository.findOne({
-                where: { id },
-                relations: {
-                    player: true,
-                    rating: true
-                }
-            });
-
-            if (analysis) {
-                await this.redisService.set(cacheKey, analysis);
-            }
-            return analysis;
-        } catch (error) {
-            console.error(`Error in findOne for id ${id}:`, error);
-            return null;
-        }
+    async getTierDistribution(position: Position): Promise<Record<number, number>> {
+        const analyses = await this.playerAnalysisRepository
+            .createQueryBuilder('analysis')
+            .leftJoin('analysis.player', 'player')
+            .leftJoin('player.ratings', 'rating')
+            .leftJoin('rating.position', 'position')
+            .leftJoin('player.draftData', 'draftData')  // Add draft data
+            .where('position.short_label = :position', { position })
+            .select('analysis.positionTier')
+            .getMany();
+    
+        return analyses.reduce((acc: Record<number, number>, analysis) => {
+            const tier = analysis.positionTier || 5;
+            acc[tier] = (acc[tier] || 0) + 1;
+            return acc;
+        }, {});
     }
-
-    async findByPlayer(playerId: number): Promise<PlayerAnalysis | null> {
-        try {
-            const cacheKey = `analysis:player:${playerId}`;
-            const cached = await this.redisService.get<PlayerAnalysis>(cacheKey);
-
-            if (cached) return cached;
-
-            const analysis = await this.analysisRepository.findOne({
-                where: {
-                    player: { id: playerId }
-                },
-                relations: {
-                    player: true,
-                    rating: true
-                }
-            });
-
-            if (analysis) {
-                await this.redisService.set(cacheKey, analysis);
-            }
-            return analysis;
-        } catch (error) {
-            console.error(`Error in findByPlayer for playerId ${playerId}:`, error);
-            return null;
-        }
-    }
-
-    async create(input: CreatePlayerAnalysisInput): Promise<PlayerAnalysis> {
-        try {
-            const analysis = this.analysisRepository.create({
-                player: { id: input.playerId },
-                rating: input.ratingId ? { id: input.ratingId } : undefined,
-                ...input
-            });
-
-            const saved = await this.analysisRepository.save(analysis);
-            await this.clearAnalysisCache(undefined, input.playerId);
-            return saved;
-        } catch (error) {
-            console.error('Error in create:', error);
-            throw error;
-        }
-    }
-
-    async update(id: number, input: UpdatePlayerAnalysisInput): Promise<PlayerAnalysis> {
-        try {
-            const analysis = await this.analysisRepository.findOneOrFail({
-                where: { id },
-                relations: {
-                    player: true,
-                    rating: true
-                }
-            });
-
-            Object.assign(analysis, input);
-
-            if (input.ratingId !== undefined) {
-                analysis.rating = input.ratingId ? { id: input.ratingId } as any : undefined;
-            }
-
-            const updated = await this.analysisRepository.save(analysis);
-            await this.clearAnalysisCache(id, analysis.player.id);
-            return updated;
-        } catch (error) {
-            console.error(`Error in update for id ${id}:`, error);
-            throw error;
-        }
-    }
-
-    async delete(id: number): Promise<boolean> {
-        try {
-            const analysis = await this.analysisRepository.findOne({
-                where: { id },
-                relations: ['player']
-            });
-            
-            if (analysis) {
-                const result = await this.analysisRepository.delete(id);
-                await this.clearAnalysisCache(id, analysis.player.id);
-                return !!result.affected;
-            }
-            return false;
-        } catch (error) {
-            console.error(`Error in delete for id ${id}:`, error);
-            return false;
-        }
-    }
-
-    async updateRanks(): Promise<void> {
-        try {
-            const analyses = await this.analysisRepository.find({
-                order: {
-                    normalizedScore: 'DESC'
-                }
-            });
-
-            const updates = analyses.map((analysis, index) => {
-                analysis.rank = index + 1;
-                return analysis;
-            });
-
-            await this.analysisRepository.save(updates);
-            await this.clearAnalysisCache();
-        } catch (error) {
-            console.error('Error in updateRanks:', error);
-            throw error;
-        }
+    
+    async getAnalysesByPosition(position: Position): Promise<PlayerAnalysis[]> {
+        return this.playerAnalysisRepository
+            .createQueryBuilder('analysis')
+            .leftJoinAndSelect('analysis.player', 'player')
+            .leftJoinAndSelect('player.ratings', 'rating')
+            .leftJoinAndSelect('rating.position', 'position')
+            .leftJoinAndSelect('player.draftData', 'draftData')  // Add draft data
+            .where('position.short_label = :position', { position })
+            .orderBy('analysis.adjustedScore', 'DESC')  // Order by adjusted score instead
+            .getMany();
     }
 }

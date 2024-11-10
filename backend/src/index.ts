@@ -20,7 +20,6 @@ import { PlayerAnalysisResolver } from './resolvers/PlayerAnalysisResolver';
 import { RosterRequirementResolver } from './resolvers/RosterRequirementResolver';
 import { DraftSessionResolver } from './resolvers/DraftSessionResolver';
 import { DraftPickResolver } from './resolvers/DraftPickResolver';
-import { DraftRecommendationResolver } from './resolvers/DraftRecommendationResolver';
 
 interface MyContext {
     requestId: string;
@@ -50,7 +49,6 @@ async function main() {
                 RosterRequirementResolver,
                 DraftSessionResolver,
                 DraftPickResolver,
-                DraftRecommendationResolver
             ],
             container: ({ context }) => context.container,
             validate: false,
