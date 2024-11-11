@@ -90,6 +90,15 @@ export class PlayerAnalysis {
     @Field(() => Float, { nullable: true })
     @Column({ name: 'adjusted_score', type: 'decimal', precision: 5, scale: 2, nullable: true })
     adjustedScore: number;
+
+    @Field(() => [SecondaryPosition], { nullable: true })
+    @Column({ name: 'secondary_positions', type: 'jsonb', nullable: true })
+    secondaryPositions: Array<{
+        position: string;
+        score: number;
+        tier: number;
+        isElite: boolean;
+    }>;
 }
 
 @ObjectType()
@@ -102,4 +111,19 @@ class ViablePosition {
 
     @Field(() => Float)
     percentageAboveAverage!: number;
+}
+
+@ObjectType()
+class SecondaryPosition {
+    @Field()
+    position!: string;
+
+    @Field(() => Float)
+    score!: number;
+
+    @Field(() => Int)
+    tier!: number;
+
+    @Field(() => Boolean)
+    isElite!: boolean;
 }

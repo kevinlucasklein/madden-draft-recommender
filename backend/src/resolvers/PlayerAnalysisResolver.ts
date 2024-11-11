@@ -56,4 +56,39 @@ export class PlayerAnalysisResolver {
     async positionScores(@Root() analysis: PlayerAnalysis): Promise<Record<string, number>> {
         return analysis.positionScores || {};
     }
+
+    @Mutation(() => Boolean)
+    async recalculatePositionScores(
+        @Arg('position', () => String) position: string
+    ): Promise<boolean> {
+        try {
+            await this.analysisService.calculatePreDraftScores(position);
+            return true;
+        } catch (error) {
+            console.error('Error recalculating position scores:', error);
+            return false;
+        }
+    }
+
+    @Mutation(() => Boolean)
+    async recalculateAllPositionScores(): Promise<boolean> {
+        try {
+            await this.analysisService.calculateAllPositionScores();
+            return true;
+        } catch (error) {
+            console.error('Error recalculating all position scores:', error);
+            return false;
+        }
+    }
+
+    @Mutation(() => Boolean)
+    async recalculateWithSecondaryPositions(): Promise<boolean> {
+        try {
+            await this.analysisService.recalculateWithSecondaryPositions();
+            return true;
+        } catch (error) {
+            console.error('Error recalculating with secondary positions:', error);
+            return false;
+        }
+    }
 }

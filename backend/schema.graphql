@@ -209,6 +209,9 @@ type Mutation {
   deletePosition(id: Int!): Boolean!
   deleteRosterRequirement(id: Int!): Boolean!
   deleteTeam(id: Int!): Boolean!
+  recalculateAllPositionScores: Boolean!
+  recalculatePositionScores(position: String!): Boolean!
+  recalculateWithSecondaryPositions: Boolean!
   reorderPlayerAbilities(abilityIds: [Int!]!, playerId: Int!): [PlayerAbility!]!
   updateArchetype(id: Int!, input: UpdateArchetypeInput!): Archetype!
   updateDraftPick(id: Int!, input: UpdateDraftPickInput!): DraftPick!
@@ -270,6 +273,7 @@ type PlayerAnalysis {
   rating: PlayerRating
   schemeFitScore: Float!
   schemeSpecificRatings: JSONObject!
+  secondaryPositions: [SecondaryPosition!]
   versatilityBonus: Float!
   viablePositions: [ViablePosition!]
 }
@@ -394,6 +398,13 @@ type RosterRequirement {
   minimumPlayers: Int!
   position: String!
   positionGroup: String!
+}
+
+type SecondaryPosition {
+  isElite: Boolean!
+  position: String!
+  score: Float!
+  tier: Int!
 }
 
 type SuggestedPosition {

@@ -6,7 +6,7 @@ type StatWeight = {
 export type Position = 
     | 'QB' | 'HB' | 'FB' | 'WR' | 'TE' 
     | 'LT' | 'RT' | 'LG' | 'RG' | 'C' 
-    | 'DE' | 'DT' | 'MLB' | 'LOLB' | 'ROLB' 
+    | 'RE' | 'LE' | 'DT' | 'MLB' | 'LOLB' | 'ROLB' 
     | 'CB' | 'FS' | 'SS' | 'K' | 'P';
 
     export const POSITION_STAT_WEIGHTS: Record<Position, Record<string, number>> = {
@@ -124,7 +124,7 @@ export type Position =
         passBlockPower: 0.8,
         agility: 0.5,
       },
-      DE: {
+      RE: {
         powerMoves: 1.0,
         finesseMoves: 1.0,
         blockShedding: 0.9,
@@ -133,6 +133,17 @@ export type Position =
         strength: 0.8,
         pursuit: 0.7,
         tackle: 0.7,
+        stamina: 0.6,
+      },
+      LE: {
+        blockShedding: 1.0,
+        powerMoves: 1.0,
+        strength: 0.9,
+        finesseMoves: 0.9,
+        speed: 0.8,
+        acceleration: 0.8,
+        tackle: 0.8,
+        pursuit: 0.7,
         stamina: 0.6,
       },
       DT: {
@@ -285,8 +296,14 @@ export const POSITION_TIER_THRESHOLDS: Record<Position, {
   },
 
   // Defense - Front Seven
-  DE: {
-      tier1: 82,  // Elite edge rusher
+  RE: {
+    tier1: 82,  // Elite edge rusher
+    tier2: 70,  // Quality starter
+    tier3: 58,  // Rotational player
+    tier4: 45   // Depth piece
+  },
+  LE: {
+      tier1: 82,  // Elite edge setter
       tier2: 70,  // Quality starter
       tier3: 58,  // Rotational player
       tier4: 45   // Depth piece
@@ -374,7 +391,7 @@ export const POSITION_STAT_THRESHOLDS = {
           agility: 85
       }
   },
-  RB: {
+  HB: {
       elite: {
           speed: 90,
           acceleration: 90,
@@ -429,7 +446,18 @@ export const POSITION_STAT_THRESHOLDS = {
           strength: 80
       }
   },
-  OT: {  // For both LT and RT
+  LT: {
+    elite: {
+        passBlockPower: 85,
+        passBlockFinesse: 85,
+        strength: 85
+    },
+    runBlocking: {
+        runBlock: 85,
+        impactBlocking: 85
+    }
+  },
+  RT: {
       elite: {
           passBlockPower: 85,
           passBlockFinesse: 85,
@@ -440,7 +468,18 @@ export const POSITION_STAT_THRESHOLDS = {
           impactBlocking: 85
       }
   },
-  IOL: {  // For LG, RG, and C
+  LG: {
+    elite: {
+        runBlock: 85,
+        impactBlocking: 85,
+        strength: 85
+    },
+    passBlocking: {
+        passBlockPower: 85,
+        passBlockFinesse: 80
+    }
+  },
+  RG: {
       elite: {
           runBlock: 85,
           impactBlocking: 85,
@@ -451,16 +490,41 @@ export const POSITION_STAT_THRESHOLDS = {
           passBlockFinesse: 80
       }
   },
-  DE: {
+  C: {
       elite: {
-          powerMoves: 85,
-          finesseMoves: 85,
-          strength: 80
+          runBlock: 85,
+          impactBlocking: 85,
+          strength: 85
       },
-      athletic: {
-          speed: 85,
-          acceleration: 85,
-          pursuit: 80
+      passBlocking: {
+          passBlockPower: 85,
+          passBlockFinesse: 80
+      }
+  },
+  RE: {
+    elite: {
+        powerMoves: 85,
+        finesseMoves: 85,
+        speed: 85,
+        strength: 80
+    },
+    athletic: {
+        acceleration: 85,
+        pursuit: 80,
+        blockShedding: 80
+    }
+  },
+  LE: {
+      elite: {
+          blockShedding: 85,
+          powerMoves: 85,
+          strength: 85,
+          tackle: 80
+      },
+      runStop: {
+          pursuit: 80,
+          finesseMoves: 80,
+          speed: 80
       }
   },
   DT: {
@@ -475,7 +539,8 @@ export const POSITION_STAT_THRESHOLDS = {
           pursuit: 75
       }
   },
-  LB: {  // For MLB, LOLB, ROLB
+    // Split LB into individual positions
+    MLB: {
       elite: {
           tackle: 85,
           pursuit: 85,
@@ -487,7 +552,33 @@ export const POSITION_STAT_THRESHOLDS = {
           speed: 85,
           acceleration: 85
       }
-  },
+    },
+    LOLB: {
+        elite: {
+            tackle: 85,
+            pursuit: 85,
+            hitPower: 80,
+            playRecognition: 80
+        },
+        coverage: {
+            zoneCoverage: 80,
+            speed: 85,
+            acceleration: 85
+        }
+    },
+    ROLB: {
+        elite: {
+            tackle: 85,
+            pursuit: 85,
+            hitPower: 80,
+            playRecognition: 80
+        },
+        coverage: {
+            zoneCoverage: 80,
+            speed: 85,
+            acceleration: 85
+        }
+    },
   CB: {
       elite: {
           speed: 90,
@@ -504,20 +595,37 @@ export const POSITION_STAT_THRESHOLDS = {
           playRecognition: 85
       }
   },
-  S: {  // For both FS and SS
-      elite: {
-          zoneCoverage: 85,
-          pursuit: 85,
-          playRecognition: 85,
-          speed: 85
-      },
-      runSupport: {
-          tackle: 85,
-          hitPower: 85,
-          blockShedding: 75
-      }
+  FS: {
+    elite: {
+        zoneCoverage: 85,
+        speed: 90,
+        acceleration: 90,
+        pursuit: 85
+    },
+    coverage: {
+        playRecognition: 85,
+        tackle: 75
+    }
   },
-  K: {  // For both K and P
+SS: {
+    elite: {
+        hitPower: 85,
+        zoneCoverage: 80,
+        tackle: 85,
+        speed: 85
+    },
+    runSupport: {
+        pursuit: 85,
+        blockShedding: 75
+    }
+  },
+  K: {
+    elite: {
+        kickPower: 90,
+        kickAccuracy: 85
+    }
+  },
+  P: {
       elite: {
           kickPower: 90,
           kickAccuracy: 85
