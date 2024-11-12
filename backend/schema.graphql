@@ -247,6 +247,11 @@ type Mutation {
   updateTeam(id: Int!, input: UpdateTeamInput!): Team!
 }
 
+type OptimizedRosterResponse {
+  optimizedRoster: [[String!]!]!
+  positionNeeds: [[String!]!]!
+}
+
 type Player {
   abilities: [PlayerAbility!]
   age: Int
@@ -391,6 +396,7 @@ type Query {
   draftSessions: [DraftSession!]!
   getPlayerAnalysesByPosition(position: String!): [PlayerAnalysis!]!
   latestPlayerRating(playerId: Int!): PlayerRating
+  optimizedRoster(sessionId: Int!): OptimizedRosterResponse!
   player(id: Int): Player
   playerAbilities: [PlayerAbility!]!
   playerAbilitiesByPlayer(playerId: Int!): [PlayerAbility!]!

@@ -2,6 +2,7 @@ import { Resolver, Query, Arg, Int } from 'type-graphql';
 import { Service } from 'typedi';
 import { RosterOptimizationService } from '../services/RosterOptimizationService';
 import { DraftSessionService } from '../services/DraftSessionService';
+import { OptimizedRosterResponse } from '../entities/RosterOptimization';
 
 @Service()
 @Resolver()
@@ -11,13 +12,12 @@ export class RosterOptimizationResolver {
         private sessionService: DraftSessionService
     ) {}
 
-    @Query(() => Object)
+    @Query(() => OptimizedRosterResponse)
     async optimizedRoster(
         @Arg('sessionId', () => Int) sessionId: number
-    ) {
-        // Fetch session with picks using the service
+    ): Promise<OptimizedRosterResponse> {
         const session = await this.sessionService.findOne(sessionId, {
-            relations: {  // Add this relations key
+            relations: {
                 picks: {
                     player: {
                         analysis: true,
@@ -40,8 +40,8 @@ export class RosterOptimizationResolver {
         );
     
         return {
-            optimizedRoster: Object.fromEntries(optimizedRoster),
-            positionNeeds
+            optimizedRoster: Array.from(optimizedRoster.entries()),
+            positionNeeds: Object.entries(positionNeeds)
         };
     }
 }
