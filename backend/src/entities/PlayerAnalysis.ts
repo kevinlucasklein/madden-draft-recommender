@@ -5,6 +5,42 @@ import { PlayerRating } from './PlayerRating';
 import { GraphQLJSONObject } from 'graphql-type-json';
 
 @ObjectType()
+class ViablePosition {
+    @Field()
+    position!: string;
+
+    @Field(() => Float)
+    score!: number;
+
+    @Field(() => Float)
+    percentageAboveAverage!: number;
+}
+
+@ObjectType()
+class SecondaryPosition {
+    @Field()
+    position!: string;
+
+    @Field(() => Float)
+    score!: number;
+
+    @Field(() => Int)
+    tier!: number;
+
+    @Field(() => Boolean)
+    isElite!: boolean;
+}
+
+@ObjectType()
+class SchemeSpecificRatings {
+    @Field()
+    gunBunchFit: number;
+
+    @Field()
+    nickelFit: number;
+}
+
+@ObjectType()
 @Entity('player_analysis')
 export class PlayerAnalysis {
     @Field(() => Int)
@@ -71,12 +107,9 @@ export class PlayerAnalysis {
     preDraftCompositeScore!: number;
 
     // Scheme Specific Ratings
-    @Field(() => GraphQLJSONObject)
+    @Field(() => SchemeSpecificRatings, { nullable: true })
     @Column('jsonb', { name: 'scheme_specific_ratings' })
-    schemeSpecificRatings!: {
-        gunBunchFit?: number;
-        nickelFit?: number;
-    };
+    schemeSpecificRatings?: SchemeSpecificRatings;
 
     // Position Specific Ratings
     @Field(() => GraphQLJSONObject)
@@ -101,29 +134,4 @@ export class PlayerAnalysis {
     }>;
 }
 
-@ObjectType()
-class ViablePosition {
-    @Field()
-    position!: string;
 
-    @Field(() => Float)
-    score!: number;
-
-    @Field(() => Float)
-    percentageAboveAverage!: number;
-}
-
-@ObjectType()
-class SecondaryPosition {
-    @Field()
-    position!: string;
-
-    @Field(() => Float)
-    score!: number;
-
-    @Field(() => Int)
-    tier!: number;
-
-    @Field(() => Boolean)
-    isElite!: boolean;
-}

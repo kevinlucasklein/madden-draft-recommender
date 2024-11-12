@@ -4,7 +4,7 @@ import { PlayerAnalysis } from '../entities/PlayerAnalysis';
 import { AppDataSource } from '../config/database';
 import { RedisService } from './RedisService';
 import { CreatePlayerAnalysisInput, UpdatePlayerAnalysisInput } from '../inputs/PlayerAnalysisInput';
-import { POSITION_STAT_THRESHOLDS, POSITION_TIER_THRESHOLDS, POSITION_STAT_WEIGHTS, Position } from '../config/positionStats';
+import { POSITION_STAT_THRESHOLDS, POSITION_TIER_THRESHOLDS, POSITION_STAT_WEIGHTS, Position, SchemeRequirements, SCHEME_THRESHOLDS, PlayerSchemeScores, SchemeScores } from '../config/positionStats';
 import { Player } from '../entities/Player';
 import { PlayerStats, PlayerStatsIndexed } from '../entities/PlayerStats';
 import fs from 'fs';
@@ -75,6 +75,21 @@ export class PlayerAnalysisService {
         }
 
         return scores;
+    }
+
+    private normalizeScore(rawScore: number, allScores: number[]): number {
+        if (allScores.length === 0) return 50; // Default to average if no comparison scores
+        
+        // Calculate mean and standard deviation
+        const mean = allScores.reduce((a, b) => a + b) / allScores.length;
+        const stdDev = Math.sqrt(
+            allScores.map(x => Math.pow(x - mean, 2))
+                  .reduce((a, b) => a + b) / allScores.length
+        );
+    
+        // Convert to z-score and scale to 0-100 range
+        const zScore = (rawScore - mean) / stdDev;
+        return Math.min(100, Math.max(0, 50 + (zScore * 15)));
     }
 
     private checkPositionSpecificBonuses(stats: PlayerStats, position: Position): number {
@@ -1609,6 +1624,914 @@ export class PlayerAnalysisService {
         return { meetsThreshold: true, score, bonus };
     }
 
+    private async calculateSchemeSpecificScores(
+        players: Player[], 
+        position: Position,
+        secondaryPositions: Map<number, { 
+            secondaryPositions: Map<Position, number>, 
+            versatilityBonus: number 
+        }>
+    ): Promise<Map<number, { 
+        primary: { gunBunchFit: number, nickelFit: number },
+        secondary: Record<Position, { gunBunchFit: number, nickelFit: number }> 
+    }>> {
+        const scores = new Map();
+        const gunBunchScores: number[] = [];
+        const nickelScores: number[] = [];
+    
+        // First pass: calculate raw scores
+        for (const player of players) {
+            if (!player.stats?.[0]) continue;
+            const stats = player.stats[0];
+    
+            // Initialize scores object for this player
+            const playerScores = {
+                primary: { gunBunchFit: 0, nickelFit: 0 },
+                secondary: {} as Record<Position, { gunBunchFit: number, nickelFit: number }>
+            };
+    
+            // Calculate primary position scores
+            switch(position) {
+                case 'QB':
+                    playerScores.primary.gunBunchFit = this.calculateGunBunchQBFit(stats);
+                    break;
+                case 'WR':
+                    playerScores.primary.gunBunchFit = this.calculateGunBunchWRFit(stats);
+                    break;
+                case 'HB':
+                    playerScores.primary.gunBunchFit = this.calculateGunBunchHBFit(stats);
+                    break;
+                case 'TE':
+                    console.log('Calculating TE scheme fit for player:', player.id);
+                    playerScores.primary.gunBunchFit = this.calculateGunBunchTEFit(stats);
+                    console.log('Raw Gun Bunch fit score:', playerScores.primary.gunBunchFit);
+                    break;
+                case 'LT':
+                case 'RT':
+                case 'LG':
+                case 'RG':
+                case 'C':
+                    playerScores.primary.gunBunchFit = this.calculateGunBunchOLFit(stats, position);
+                    break;
+                case 'CB':
+                case 'FS':
+                case 'SS':
+                    playerScores.primary.nickelFit = this.calculateNickelDBFit(stats, position);
+                    break;
+                case 'LOLB':
+                case 'MLB':
+                case 'ROLB':
+                    playerScores.primary.nickelFit = this.calculateNickelLBFit(stats, position);
+                    break;
+                case 'LE':
+                case 'RE':
+                case 'DT':
+                    playerScores.primary.nickelFit = this.calculateNickelDLFit(stats, position);
+                    break;
+            }
+    
+            // Get and calculate secondary position scores
+            const existingAnalysis = await this.findByPlayer(player.id);
+            if (existingAnalysis?.secondaryPositions) {
+                for (const secondaryPos of existingAnalysis.secondaryPositions) {
+                    const pos = secondaryPos.position as Position;
+                    playerScores.secondary[pos] = { gunBunchFit: 0, nickelFit: 0 };
+    
+                    switch(pos) {
+                        case 'QB':
+                            playerScores.secondary[pos].gunBunchFit = this.calculateGunBunchQBFit(stats);
+                            break;
+                        case 'WR':
+                            playerScores.secondary[pos].gunBunchFit = this.calculateGunBunchWRFit(stats);
+                            break;
+                        case 'HB':
+                            playerScores.secondary[pos].gunBunchFit = this.calculateGunBunchHBFit(stats);
+                            break;
+                        case 'TE':
+                            console.log('Calculating TE scheme fit for player:', player.id);
+                            playerScores.primary.gunBunchFit = this.calculateGunBunchTEFit(stats);
+                            console.log('Raw Gun Bunch fit score:', playerScores.primary.gunBunchFit);
+                            break;
+                        case 'LT':
+                        case 'RT':
+                        case 'LG':
+                        case 'RG':
+                        case 'C':
+                            playerScores.secondary[pos].gunBunchFit = this.calculateGunBunchOLFit(stats, pos);
+                            break;
+                        case 'CB':
+                        case 'FS':
+                        case 'SS':
+                            playerScores.secondary[pos].nickelFit = this.calculateNickelDBFit(stats, pos);
+                            break;
+                        case 'LOLB':
+                        case 'MLB':
+                        case 'ROLB':
+                            playerScores.secondary[pos].nickelFit = this.calculateNickelLBFit(stats, pos);
+                            break;
+                        case 'LE':
+                        case 'RE':
+                        case 'DT':
+                            playerScores.secondary[pos].nickelFit = this.calculateNickelDLFit(stats, pos);
+                            break;
+                    }
+                }
+            }
+    
+            // Store raw scores for normalization
+            if (playerScores.primary.gunBunchFit > 0) gunBunchScores.push(playerScores.primary.gunBunchFit);
+            if (playerScores.primary.nickelFit > 0) nickelScores.push(playerScores.primary.nickelFit);
+
+            // Also store secondary position scores for normalization
+            Object.values(playerScores.secondary).forEach(scores => {
+                if (scores.gunBunchFit > 0) gunBunchScores.push(scores.gunBunchFit);
+                if (scores.nickelFit > 0) nickelScores.push(scores.nickelFit);
+            });
+
+            scores.set(player.id, playerScores);
+        }
+
+        // Second pass: normalize all scores
+        if (gunBunchScores.length > 0) {
+            const gunBunchMean = gunBunchScores.reduce((a, b) => a + b) / gunBunchScores.length;
+            const gunBunchStdDev = Math.sqrt(
+                gunBunchScores.map(x => Math.pow(x - gunBunchMean, 2))
+                    .reduce((a, b) => a + b) / gunBunchScores.length
+            );
+    
+            // Normalize all Gun Bunch scores with less compression (25 instead of 15)
+            for (const [playerId, playerScores] of scores as Map<number, PlayerSchemeScores>) {
+                // Normalize primary position Gun Bunch score
+                if (playerScores.primary.gunBunchFit > 0) {
+                    const zScore = (playerScores.primary.gunBunchFit - gunBunchMean) / gunBunchStdDev;
+                    playerScores.primary.gunBunchFit = Math.min(100, Math.max(0, 50 + (zScore * 25)));
+                }
+    
+                // Normalize secondary positions Gun Bunch scores
+                Object.values(playerScores.secondary).forEach((posScores: SchemeScores) => {
+                    if (posScores.gunBunchFit > 0) {
+                        const zScore = (posScores.gunBunchFit - gunBunchMean) / gunBunchStdDev;
+                        posScores.gunBunchFit = Math.min(100, Math.max(0, 50 + (zScore * 25)));
+                    }
+                });
+            }
+        }
+    
+        // Similar adjustment for Nickel scores
+        if (nickelScores.length > 0) {
+            const nickelMean = nickelScores.reduce((a, b) => a + b) / nickelScores.length;
+            const nickelStdDev = Math.sqrt(
+                nickelScores.map(x => Math.pow(x - nickelMean, 2))
+                    .reduce((a, b) => a + b) / nickelScores.length
+            );
+    
+            for (const [playerId, playerScores] of scores as Map<number, PlayerSchemeScores>) {
+                if (playerScores.primary.nickelFit > 0) {
+                    const zScore = (playerScores.primary.nickelFit - nickelMean) / nickelStdDev;
+                    playerScores.primary.nickelFit = Math.min(100, Math.max(0, 50 + (zScore * 25)));
+                }
+    
+                Object.values(playerScores.secondary).forEach((posScores: SchemeScores) => {
+                    if (posScores.nickelFit > 0) {
+                        const zScore = (posScores.nickelFit - nickelMean) / nickelStdDev;
+                        posScores.nickelFit = Math.min(100, Math.max(0, 50 + (zScore * 25)));
+                    }
+                });
+            }
+        }
+    
+        return scores;
+    }
+
+    private calculateGunBunchQBFit(stats: PlayerStats): number {
+        const weights = {
+            accuracy: 0.7,    // Accuracy is most important
+            mobility: 0.3     // Mobility is secondary but important
+        };
+    
+        // Calculate accuracy score (70% weight)
+        const accuracyScore = (
+            ((stats.throwAccuracyShort || 0) * 1.2) +  // Short accuracy most important
+            ((stats.throwAccuracyMid || 0) * 1.1) +    // Mid accuracy next
+            ((stats.throwOnTheRun || 0) * 1.1) +       // Throw on run important
+            ((stats.throwPower || 0) * 0.8) +          // Some arm strength needed
+            ((stats.playAction || 0) * 0.8)            // Play action useful
+        ) / 5.0;  // Normalized to ~100
+    
+        // Calculate mobility score (30% weight)
+        const mobilityScore = (
+            ((stats.speed || 0) * 1.0) +
+            ((stats.acceleration || 0) * 0.9) +
+            ((stats.agility || 0) * 0.8) +
+            ((stats.throwOnTheRun || 0) * 0.8)    // Count throw on run in both categories
+        ) / 3.5;  // Normalized to ~100
+    
+        // Calculate base score
+        let finalScore = (
+            accuracyScore * weights.accuracy + 
+            mobilityScore * weights.mobility
+        );
+    
+        // Bonus calculations
+        const bonuses = [];
+        
+        // Elite accuracy bonus
+        if (stats.throwAccuracyShort && stats.throwAccuracyShort >= 90 &&
+            stats.throwAccuracyMid && stats.throwAccuracyMid >= 85) {
+            bonuses.push(0.15); // 15% bonus
+        }
+    
+        // Mobility threat bonus
+        if (stats.speed && stats.speed >= 85 &&
+            stats.acceleration && stats.acceleration >= 85 &&
+            stats.throwOnTheRun && stats.throwOnTheRun >= 85) {
+            bonuses.push(0.12); // 12% bonus
+        }
+    
+        // Quick release bonus (new)
+        if (stats.throwPower && stats.throwPower >= 85 &&
+            stats.playAction && stats.playAction >= 85) {
+            bonuses.push(0.10); // 10% bonus
+        }
+    
+        // Apply bonuses
+        const totalBonus = bonuses.reduce((sum, bonus) => sum + bonus, 0);
+        finalScore = finalScore * (1 + totalBonus);
+    
+        return Math.min(100, finalScore);
+    }
+
+    private calculateGunBunchWRFit(stats: PlayerStats): number {
+        const weights = {
+            routeRunning: 0.6,    // Route running most important
+            receiving: 0.4        // Receiving ability secondary
+        };
+    
+        // Calculate route running score (60% weight)
+        const routeRunningScore = (
+            ((stats.shortRouteRunning || 0) * 1.3) +   // Short routes crucial
+            ((stats.mediumRouteRunning || 0) * 1.2) +  // Medium routes important
+            ((stats.deepRouteRunning || 0) * 0.8) +    // Deep routes less emphasis
+            ((stats.agility || 0) * 0.8) +             // Agility helps routes
+            ((stats.acceleration || 0) * 0.7)          // Acceleration for breaks
+        ) / 4.8;  // Normalized to ~100
+    
+        // Calculate receiving score (40% weight)
+        const receivingScore = (
+            ((stats.catching || 0) * 1.2) +
+            ((stats.catchInTraffic || 0) * 1.1) +
+            ((stats.release || 0) * 0.9) +           // Release important vs press
+            ((stats.awareness || 0) * 0.8) +         // Finding soft spots
+            ((stats.jumping || 0) * 0.7)            // Contested catches
+        ) / 4.7;  // Normalized to ~100
+    
+        // Calculate base score
+        let finalScore = (
+            routeRunningScore * weights.routeRunning + 
+            receivingScore * weights.receiving
+        );
+    
+        // Bonus calculations
+        const bonuses = [];
+        
+        // Elite route runner bonus
+        if (stats.shortRouteRunning && stats.shortRouteRunning >= 90 &&
+            stats.mediumRouteRunning && stats.mediumRouteRunning >= 85) {
+            bonuses.push(0.15); // 15% bonus
+        }
+    
+        // Slot receiver bonus
+        if (stats.catching && stats.catching >= 85 &&
+            stats.catchInTraffic && stats.catchInTraffic >= 85 &&
+            stats.shortRouteRunning && stats.shortRouteRunning >= 85) {
+            bonuses.push(0.12); // 12% bonus
+        }
+    
+        // YAC threat bonus
+        if (stats.speed && stats.speed >= 90 &&
+            stats.acceleration && stats.acceleration >= 90 &&
+            stats.agility && stats.agility >= 85) {
+            bonuses.push(0.10); // 10% bonus
+        }
+    
+        // Apply bonuses
+        const totalBonus = bonuses.reduce((sum, bonus) => sum + bonus, 0);
+        finalScore = finalScore * (1 + totalBonus);
+    
+        return Math.min(100, finalScore);
+    }
+
+    private calculateGunBunchHBFit(stats: PlayerStats): number {
+        const weights = {
+            receiving: 0.7,    // Receiving most important for Gun Bunch
+            blocking: 0.3      // Pass blocking still important
+        };
+    
+        // Calculate receiving score (70% weight)
+        const receivingScore = (
+            ((stats.catching || 0) * 1.2) +          // Catching most crucial
+            ((stats.shortRouteRunning || 0) * 1.1) + // Short routes important
+            ((stats.mediumRouteRunning || 0) * 0.9) +// Medium routes useful
+            ((stats.catchInTraffic || 0) * 1.0) +    // CIT for checkdowns
+            ((stats.acceleration || 0) * 0.8)        // Acceleration for routes
+        ) / 5.0;  // Normalized to ~100
+    
+        // Calculate pass blocking score (30% weight)
+        const blockingScore = (
+            ((stats.passBlock || 0) * 1.2) +        // Pass blocking primary
+            ((stats.awareness || 0) * 1.0) +        // Awareness for blitz pickup
+            ((stats.strength || 0) * 0.8) +         // Strength helps in protection
+            ((stats.impactBlocking || 0) * 0.7)     // General blocking ability
+        ) / 3.7;  // Normalized to ~100
+    
+        // Calculate base score
+        let finalScore = (
+            receivingScore * weights.receiving + 
+            blockingScore * weights.blocking
+        );
+    
+        // Bonus calculations
+        const bonuses = [];
+        
+        // Receiving specialist bonus
+        if (stats.catching && stats.catching >= 85 &&
+            stats.shortRouteRunning && stats.shortRouteRunning >= 80) {
+            bonuses.push(0.15); // 15% bonus for elite receiving backs
+        }
+    
+        // Pass protection specialist bonus
+        if (stats.passBlock && stats.passBlock >= 85 &&
+            stats.awareness && stats.awareness >= 80) {
+            bonuses.push(0.12); // 12% bonus for elite pass protectors
+        }
+    
+        // Third down back bonus
+        if (stats.catching && stats.catching >= 80 &&
+            stats.passBlock && stats.passBlock >= 75 &&
+            stats.awareness && stats.awareness >= 75 &&
+            stats.acceleration && stats.acceleration >= 85) {
+            bonuses.push(0.10); // 10% bonus for complete third down backs
+        }
+    
+        // YAC threat bonus (new)
+        if (stats.speed && stats.speed >= 90 &&
+            stats.acceleration && stats.acceleration >= 90 &&
+            stats.breakTackle && stats.breakTackle >= 85) {
+            bonuses.push(0.08); // 8% bonus for explosive players
+        }
+    
+        // Apply bonuses
+        const totalBonus = bonuses.reduce((sum, bonus) => sum + bonus, 0);
+        finalScore = finalScore * (1 + totalBonus);
+    
+        return Math.min(100, finalScore);
+    }
+
+    private calculateGunBunchTEFit(stats: PlayerStats): number {
+        const weights = {
+            receiving: 0.7,
+            blocking: 0.3
+        };
+    
+        // Calculate receiving score (70% weight)
+        const receivingScore = (
+            ((stats.catching || 0) * 1.2) +
+            ((stats.shortRouteRunning || 0) * 1.1) +
+            ((stats.mediumRouteRunning || 0) * 1.1) +
+            ((stats.catchInTraffic || 0) * 1.1) +
+            ((stats.speed || 0) * 0.8)
+        ) / 5.3;  // This normalizes to roughly 0-100
+    
+        // Calculate pass blocking score (30% weight)
+        const blockingScore = (
+            ((stats.passBlock || 0) * 1.0) +
+            ((stats.impactBlocking || 0) * 0.8) +
+            ((stats.strength || 0) * 0.7)
+        ) / 2.5;  // This normalizes to roughly 0-100
+    
+        // Calculate base score (will be 0-100)
+        let finalScore = (
+            (receivingScore * weights.receiving) + 
+            (blockingScore * weights.blocking)
+        );
+    
+        // Bonus calculations
+        const bonuses = [];
+        
+        // Elite receiving bonus
+        if (stats.catching && stats.catching >= 85 &&
+            stats.shortRouteRunning && stats.shortRouteRunning >= 80 &&
+            stats.mediumRouteRunning && stats.mediumRouteRunning >= 80) {
+            bonuses.push(0.15);
+        }
+    
+        // Seam threat bonus
+        if (stats.speed && stats.speed >= 85 &&
+            stats.acceleration && stats.acceleration >= 85 &&
+            stats.mediumRouteRunning && stats.mediumRouteRunning >= 80) {
+            bonuses.push(0.12);
+        }
+    
+        // YAC threat bonus
+        if (stats.speed && stats.speed >= 80 &&
+            stats.acceleration && stats.acceleration >= 80 &&
+            stats.breakTackle && stats.breakTackle >= 75) {
+            bonuses.push(0.10);
+        }
+    
+        // Apply bonuses
+        const totalBonus = bonuses.reduce((sum, bonus) => sum + bonus, 0);
+        finalScore = finalScore * (1 + totalBonus);
+    
+        return Math.min(100, finalScore);
+    }
+
+    private calculateGunBunchOLFit(stats: PlayerStats, position: Position): number {
+        // Position-specific weights
+        const weights = {
+            passBlock: position === 'LT' || position === 'RT' ? 0.8 : 0.7,  // Tackles need better pass pro
+            runBlock: position === 'LT' || position === 'RT' ? 0.2 : 0.3
+        };
+    
+        // Calculate pass blocking score (primary focus)
+        const passBlockScore = (
+            ((stats.passBlockPower || 0) * 1.2) +     // Power most important
+            ((stats.passBlockFinesse || 0) * 1.1) +   // Finesse next
+            ((stats.strength || 0) * 0.9) +           // Strength helps
+            ((stats.awareness || 0) * 1.0) +          // Awareness for blitzes
+            ((stats.acceleration || 0) * 0.8)         // Quick feet
+        ) / 5.0;  // Normalized to ~100
+    
+        // Calculate run blocking score (secondary but important)
+        const runBlockScore = (
+            ((stats.runBlock || 0) * 1.2) +           // Run blocking base
+            ((stats.impactBlocking || 0) * 1.0) +     // Impact blocking
+            ((stats.strength || 0) * 0.9) +           // Strength
+            ((stats.acceleration || 0) * 0.7)         // Getting to second level
+        ) / 3.8;  // Normalized to ~100
+    
+        // Calculate base score
+        let finalScore = (
+            passBlockScore * weights.passBlock + 
+            runBlockScore * weights.runBlock
+        );
+    
+        // Position-specific bonuses
+        const bonuses = [];
+    
+        switch(position) {
+            case 'LT':
+                // Elite pass protector bonus
+                if (stats.passBlockPower && stats.passBlockPower >= 90 &&
+                    stats.passBlockFinesse && stats.passBlockFinesse >= 90) {
+                    bonuses.push(0.15); // 15% bonus for elite pass protection
+                }
+                // Athletic tackle bonus
+                if (stats.acceleration && stats.acceleration >= 85 &&
+                    stats.agility && stats.agility >= 85) {
+                    bonuses.push(0.10); // 10% bonus for athleticism
+                }
+                break;
+    
+            case 'RT':
+                // Balanced protection bonus
+                if (stats.passBlockPower && stats.passBlockPower >= 85 &&
+                    stats.passBlockFinesse && stats.passBlockFinesse >= 85 &&
+                    stats.runBlock && stats.runBlock >= 80) {
+                    bonuses.push(0.12); // 12% bonus for balanced protection
+                }
+                break;
+    
+            case 'LG':
+            case 'RG':
+                // Interior pass protection bonus
+                if (stats.passBlockPower && stats.passBlockPower >= 85 &&
+                    stats.strength && stats.strength >= 85) {
+                    bonuses.push(0.12); // 12% bonus for strong interior protection
+                }
+                // Pull blocking bonus
+                if (stats.acceleration && stats.acceleration >= 80 &&
+                    stats.runBlock && stats.runBlock >= 85) {
+                    bonuses.push(0.08); // 8% bonus for pull blocking
+                }
+                break;
+    
+            case 'C':
+                // Smart center bonus
+                if (stats.awareness && stats.awareness >= 90 &&
+                    stats.passBlockPower && stats.passBlockPower >= 85) {
+                    bonuses.push(0.12); // 12% bonus for smart pass protecting center
+                }
+                // Line call bonus
+                if (stats.awareness && stats.awareness >= 90 &&
+                    stats.strength && stats.strength >= 85) {
+                    bonuses.push(0.10); // 10% bonus for elite awareness and strength
+                }
+                break;
+        }
+    
+        // Universal bonuses
+        // Elite awareness bonus (important for picking up blitzes)
+        if (stats.awareness && stats.awareness >= 90) {
+            bonuses.push(0.08); // 8% bonus for elite awareness
+        }
+    
+        // Complete blocker bonus
+        if (stats.passBlockPower && stats.passBlockPower >= 85 &&
+            stats.passBlockFinesse && stats.passBlockFinesse >= 85 &&
+            stats.strength && stats.strength >= 85 &&
+            stats.awareness && stats.awareness >= 85) {
+            bonuses.push(0.10); // 10% bonus for complete blockers
+        }
+    
+        // Apply bonuses
+        const totalBonus = bonuses.reduce((sum, bonus) => sum + bonus, 0);
+        finalScore = finalScore * (1 + totalBonus);
+    
+        return Math.min(100, finalScore);
+    }
+
+    private calculateNickelDBFit(stats: PlayerStats, position: Position): number {
+        // Position-specific weights
+        const weights = {
+            man: position === 'CB' ? 0.7 : 0.3,      // CBs need better man coverage
+            zone: position === 'CB' ? 0.3 : 0.5,     // Safeties need better zone
+            physical: position === 'SS' ? 0.3 : 0.2   // SS needs more physical traits
+        };
+    
+        // Calculate man coverage score
+        const manScore = (
+            ((stats.manCoverage || 0) * 1.3) +     // Man coverage most important
+            ((stats.press || 0) * 1.1) +           // Press ability
+            ((stats.acceleration || 0) * 1.0) +     // Quick breaks
+            ((stats.agility || 0) * 0.9) +         // Change of direction
+            ((stats.speed || 0) * 0.8)             // Speed helps everywhere
+        ) / 5.1;  // Normalized to ~100
+    
+        // Calculate zone coverage score
+        const zoneScore = (
+            ((stats.zoneCoverage || 0) * 1.3) +    // Zone coverage primary
+            ((stats.playRecognition || 0) * 1.2) + // Reading plays
+            ((stats.awareness || 0) * 1.1) +       // General awareness
+            ((stats.acceleration || 0) * 0.8) +    // Getting to spots
+            ((stats.jumping || 0) * 0.7)           // Ball skills
+        ) / 5.1;  // Normalized to ~100
+    
+        // Calculate physical/athleticism score
+        const physicalScore = (
+            ((stats.speed || 0) * 1.1) +           // Speed
+            ((stats.acceleration || 0) * 1.0) +     // Acceleration
+            ((stats.tackle || 0) * 1.0) +          // Tackling
+            ((stats.hitPower || 0) * 0.9) +        // Hit power
+            ((stats.strength || 0) * 0.8)          // Strength for press/tackles
+        ) / 4.8;  // Normalized to ~100
+    
+        // Calculate base score
+        let finalScore = (
+            manScore * weights.man + 
+            zoneScore * weights.zone +
+            physicalScore * weights.physical
+        );
+    
+        // Position-specific bonuses
+        const bonuses = [];
+    
+        switch(position) {
+            case 'CB':
+                // Elite man coverage bonus
+                if (stats.manCoverage && stats.manCoverage >= 90 &&
+                    stats.press && stats.press >= 85) {
+                    bonuses.push(0.15); // 15% bonus for elite man coverage
+                }
+                
+                // Press specialist bonus
+                if (stats.press && stats.press >= 90 &&
+                    stats.strength && stats.strength >= 80) {
+                    bonuses.push(0.12); // 12% bonus for press ability
+                }
+    
+                // Mirror technique bonus
+                if (stats.agility && stats.agility >= 90 &&
+                    stats.acceleration && stats.acceleration >= 90) {
+                    bonuses.push(0.10); // 10% bonus for elite movement
+                }
+                break;
+    
+            case 'FS':
+                // Elite coverage safety bonus
+                if (stats.zoneCoverage && stats.zoneCoverage >= 90 &&
+                    stats.playRecognition && stats.playRecognition >= 90) {
+                    bonuses.push(0.15); // 15% bonus for elite zone coverage
+                }
+                
+                // Range bonus
+                if (stats.speed && stats.speed >= 90 &&
+                    stats.acceleration && stats.acceleration >= 90) {
+                    bonuses.push(0.12); // 12% bonus for elite range
+                }
+    
+                // Ball hawk bonus
+                if (stats.jumping && stats.jumping >= 85 &&
+                    stats.awareness && stats.awareness >= 85) {
+                    bonuses.push(0.10); // 10% bonus for playmaking
+                }
+                break;
+    
+            case 'SS':
+                // Hybrid safety bonus
+                if (stats.zoneCoverage && stats.zoneCoverage >= 85 &&
+                    stats.tackle && stats.tackle >= 85 &&
+                    stats.hitPower && stats.hitPower >= 85) {
+                    bonuses.push(0.15); // 15% bonus for complete SS
+                }
+                
+                // Box safety bonus
+                if (stats.tackle && stats.tackle >= 90 &&
+                    stats.hitPower && stats.hitPower >= 90) {
+                    bonuses.push(0.12); // 12% bonus for elite physical play
+                }
+    
+                // Coverage linebacker bonus
+                if (stats.zoneCoverage && stats.zoneCoverage >= 85 &&
+                    stats.speed && stats.speed >= 85) {
+                    bonuses.push(0.10); // 10% bonus for coverage ability
+                }
+                break;
+        }
+    
+        // Universal bonuses
+        // Elite athleticism bonus
+        if (stats.speed && stats.speed >= 95 &&
+            stats.acceleration && stats.acceleration >= 95) {
+            bonuses.push(0.10); // 10% bonus for exceptional athleticism
+        }
+    
+        // Complete defender bonus
+        if (stats.tackle && stats.tackle >= 80 &&
+            stats.zoneCoverage && stats.zoneCoverage >= 80 &&
+            stats.manCoverage && stats.manCoverage >= 80) {
+            bonuses.push(0.08); // 8% bonus for well-rounded skills
+        }
+    
+        // Apply bonuses
+        const totalBonus = bonuses.reduce((sum, bonus) => sum + bonus, 0);
+        finalScore = finalScore * (1 + totalBonus);
+    
+        return Math.min(100, finalScore);
+    }
+
+    private calculateNickelLBFit(stats: PlayerStats, position: Position): number {
+        // Position-specific weights
+        const weights = {
+            blitz: position === 'MLB' ? 0.5 : 0.6,    // OLBs blitz more
+            coverage: position === 'MLB' ? 0.3 : 0.2,  // MLB needs better coverage
+            physical: position === 'MLB' ? 0.2 : 0.2   // Physical traits equal
+        };
+    
+        // Calculate blitzing score (crucial for Mug look)
+        const blitzScore = (
+            ((stats.powerMoves || 0) * 1.2) +      // Power moves primary
+            ((stats.finesseMoves || 0) * 1.1) +    // Finesse moves
+            ((stats.acceleration || 0) * 1.0) +     // Quick first step
+            ((stats.pursuit || 0) * 0.9) +         // Chase down
+            ((stats.speed || 0) * 0.8)             // Overall speed
+        ) / 5.0;  // Normalized to ~100
+    
+        // Calculate coverage score
+        const coverageScore = (
+            ((stats.zoneCoverage || 0) * 1.2) +    // Zone primary
+            ((stats.manCoverage || 0) * 1.1) +     // Man coverage
+            ((stats.playRecognition || 0) * 1.1) + // Reading plays
+            ((stats.awareness || 0) * 0.9) +       // General awareness
+            ((stats.speed || 0) * 0.8)             // Coverage speed
+        ) / 5.1;  // Normalized to ~100
+    
+        // Calculate physical/run defense score
+        const physicalScore = (
+            ((stats.tackle || 0) * 1.2) +          // Tackling primary
+            ((stats.hitPower || 0) * 1.1) +        // Hit power
+            ((stats.blockShedding || 0) * 1.0) +   // Shed blocks
+            ((stats.strength || 0) * 0.9) +        // Base strength
+            ((stats.pursuit || 0) * 0.8)           // Chase down
+        ) / 5.0;  // Normalized to ~100
+    
+        // Calculate base score
+        let finalScore = (
+            blitzScore * weights.blitz + 
+            coverageScore * weights.coverage +
+            physicalScore * weights.physical
+        );
+    
+        // Position-specific bonuses
+        const bonuses = [];
+    
+        switch(position) {
+            case 'LOLB':
+            case 'ROLB':
+                // Elite pass rusher bonus
+                if (stats.powerMoves && stats.powerMoves >= 85 &&
+                    stats.finesseMoves && stats.finesseMoves >= 85 &&
+                    stats.acceleration && stats.acceleration >= 90) {
+                    bonuses.push(0.15); // 15% bonus for elite pass rushing
+                }
+                
+                // Speed rusher bonus
+                if (stats.speed && stats.speed >= 90 &&
+                    stats.acceleration && stats.acceleration >= 90) {
+                    bonuses.push(0.12); // 12% bonus for elite speed rushing
+                }
+    
+                // Complete edge bonus
+                if (stats.tackle && stats.tackle >= 85 &&
+                    stats.pursuit && stats.pursuit >= 85 &&
+                    stats.blockShedding && stats.blockShedding >= 85) {
+                    bonuses.push(0.10); // 10% bonus for complete edge player
+                }
+                break;
+    
+            case 'MLB':
+                // Coverage linebacker bonus
+                if (stats.zoneCoverage && stats.zoneCoverage >= 85 &&
+                    stats.playRecognition && stats.playRecognition >= 90) {
+                    bonuses.push(0.15); // 15% bonus for elite coverage MLB
+                }
+                
+                // Run stopper bonus
+                if (stats.tackle && stats.tackle >= 90 &&
+                    stats.blockShedding && stats.blockShedding >= 85 &&
+                    stats.hitPower && stats.hitPower >= 85) {
+                    bonuses.push(0.12); // 12% bonus for elite run stopping
+                }
+    
+                // Field general bonus
+                if (stats.awareness && stats.awareness >= 90 &&
+                    stats.playRecognition && stats.playRecognition >= 90) {
+                    bonuses.push(0.10); // 10% bonus for defensive QB
+                }
+                break;
+        }
+    
+        // Universal scheme-specific bonuses
+        
+        // Blitz specialist bonus
+        if (stats.acceleration && stats.acceleration >= 90 &&
+            ((stats.powerMoves && stats.powerMoves >= 85) || 
+             (stats.finesseMoves && stats.finesseMoves >= 85))) {
+            bonuses.push(0.10); // 10% bonus for elite blitzing
+        }
+    
+        // Coverage versatility bonus
+        if (stats.zoneCoverage && stats.zoneCoverage >= 80 &&
+            stats.manCoverage && stats.manCoverage >= 80 &&
+            stats.speed && stats.speed >= 85) {
+            bonuses.push(0.08); // 8% bonus for coverage versatility
+        }
+    
+        // Complete linebacker bonus
+        if (stats.tackle && stats.tackle >= 85 &&
+            stats.zoneCoverage && stats.zoneCoverage >= 80 &&
+            stats.pursuit && stats.pursuit >= 85 &&
+            stats.playRecognition && stats.playRecognition >= 85) {
+            bonuses.push(0.10); // 10% bonus for complete LB
+        }
+    
+        // Apply bonuses
+        const totalBonus = bonuses.reduce((sum, bonus) => sum + bonus, 0);
+        finalScore = finalScore * (1 + totalBonus);
+    
+        return Math.min(100, finalScore);
+    }
+
+    private calculateNickelDLFit(stats: PlayerStats, position: Position): number {
+        // Position-specific weights
+        const weights = {
+            passRush: position === 'DT' ? 0.5 : 0.6,    // Ends need more pass rush
+            speed: position === 'DT' ? 0.2 : 0.3,       // Speed for ends
+            power: position === 'DT' ? 0.3 : 0.1        // Power for tackles
+        };
+    
+        // Calculate pass rush score (primary focus)
+        const passRushScore = (
+            ((stats.powerMoves || 0) * 1.2) +       // Power moves primary
+            ((stats.finesseMoves || 0) * 1.1) +     // Finesse moves
+            ((stats.blockShedding || 0) * 1.0) +    // Shed blocks
+            ((stats.acceleration || 0) * 0.9) +     // First step
+            ((stats.strength || 0) * 0.8)           // Base strength
+        ) / 5.0;  // Normalized to ~100
+    
+        // Calculate speed/athleticism score
+        const speedScore = (
+            ((stats.speed || 0) * 1.2) +           // Speed primary
+            ((stats.acceleration || 0) * 1.1) +     // Acceleration
+            ((stats.agility || 0) * 1.0) +         // Agility
+            ((stats.pursuit || 0) * 0.9) +         // Chase down
+            ((stats.stamina || 0) * 0.8)           // Endurance
+        ) / 5.0;  // Normalized to ~100
+    
+        // Calculate power/strength score
+        const powerScore = (
+            ((stats.strength || 0) * 1.2) +        // Strength primary
+            ((stats.tackle || 0) * 1.1) +          // Tackling
+            ((stats.blockShedding || 0) * 1.0) +   // Shed blocks
+            ((stats.hitPower || 0) * 0.9) +        // Impact
+            ((stats.pursuit || 0) * 0.8)           // Chase down
+        ) / 5.0;  // Normalized to ~100
+    
+        // Calculate base score
+        let finalScore = (
+            passRushScore * weights.passRush + 
+            speedScore * weights.speed +
+            powerScore * weights.power
+        );
+    
+        // Position-specific bonuses
+        const bonuses = [];
+    
+        switch(position) {
+            case 'LE':
+            case 'RE':
+                // Elite speed rusher bonus
+                if (stats.speed && stats.speed >= 85 &&
+                    stats.acceleration && stats.acceleration >= 90) {
+                    bonuses.push(0.15); // 15% bonus for elite speed rushing
+                }
+                
+                // Elite pass rusher bonus
+                if (stats.finesseMoves && stats.finesseMoves >= 90 &&
+                    stats.powerMoves && stats.powerMoves >= 85) {
+                    bonuses.push(0.12); // 12% bonus for elite pass rushing
+                }
+    
+                // Explosive first step bonus
+                if (stats.acceleration && stats.acceleration >= 90 &&
+                    stats.agility && stats.agility >= 85) {
+                    bonuses.push(0.10); // 10% bonus for explosiveness
+                }
+    
+                // Complete edge bonus
+                if (stats.pursuit && stats.pursuit >= 85 &&
+                    stats.tackle && stats.tackle >= 85 &&
+                    stats.blockShedding && stats.blockShedding >= 85) {
+                    bonuses.push(0.08); // 8% bonus for complete edge player
+                }
+                break;
+    
+            case 'DT':
+                // Penetrating DT bonus
+                if (stats.acceleration && stats.acceleration >= 85 &&
+                    stats.blockShedding && stats.blockShedding >= 90) {
+                    bonuses.push(0.15); // 15% bonus for elite penetration
+                }
+                
+                // Pass rushing DT bonus
+                if (stats.powerMoves && stats.powerMoves >= 90 &&
+                    stats.finesseMoves && stats.finesseMoves >= 80) {
+                    bonuses.push(0.12); // 12% bonus for pass rushing DT
+                }
+    
+                // Quick DT bonus
+                if (stats.speed && stats.speed >= 80 &&
+                    stats.acceleration && stats.acceleration >= 85) {
+                    bonuses.push(0.10); // 10% bonus for athletic DT
+                }
+    
+                // Anchor bonus
+                if (stats.strength && stats.strength >= 90 &&
+                    stats.blockShedding && stats.blockShedding >= 85) {
+                    bonuses.push(0.08); // 8% bonus for strong anchor
+                }
+                break;
+        }
+    
+        // Universal scheme-specific bonuses
+        
+        // Elite athleticism bonus
+        if (stats.speed && stats.speed >= 85 &&
+            stats.acceleration && stats.acceleration >= 90 &&
+            stats.agility && stats.agility >= 85) {
+            bonuses.push(0.10); // 10% bonus for exceptional athleticism
+        }
+    
+        // Complete pass rusher bonus
+        if (stats.powerMoves && stats.powerMoves >= 85 &&
+            stats.finesseMoves && stats.finesseMoves >= 85 &&
+            stats.blockShedding && stats.blockShedding >= 85) {
+            bonuses.push(0.10); // 10% bonus for complete pass rusher
+        }
+    
+        // Motor bonus
+        if (stats.pursuit && stats.pursuit >= 85 &&
+            stats.stamina && stats.stamina >= 85) {
+            bonuses.push(0.05); // 5% bonus for high motor
+        }
+    
+        // Apply bonuses
+        const totalBonus = bonuses.reduce((sum, bonus) => sum + bonus, 0);
+        finalScore = finalScore * (1 + totalBonus);
+    
+        return Math.min(100, finalScore);
+    }
+
     private assignTier(normalizedScore: number, position: Position): number {
         const thresholds = POSITION_TIER_THRESHOLDS[position];
         if (!thresholds) return this.assignDefaultTier(normalizedScore);
@@ -1667,8 +2590,12 @@ export class PlayerAnalysisService {
     
             const normalizedScores = await this.normalizePositionScores(players, positionCode as Position);
             const adjustedScores = new Map<number, number>();
+            const playerSecondaryPositions = new Map<number, { 
+                secondaryPositions: Map<Position, number>, 
+                versatilityBonus: number 
+            }>();
     
-            // First pass: calculate all adjusted scores with versatility
+            // First pass: calculate scores and test secondary positions
             for (const [playerId, normalizedScore] of normalizedScores) {
                 const player = players.find(p => p.id === playerId);
                 if (!player) continue;
@@ -1676,65 +2603,77 @@ export class PlayerAnalysisService {
                 const ageMultiplier = this.calculateAgeMultiplier(player.age);
                 const devMultiplier = this.calculateDevTraitMultiplier(player.draftData?.developmentTrait ?? 0);
                 
-                // Add versatility testing
-                const { secondaryPositions, versatilityBonus } = await this.testPositionFlexibility(
+                // Store versatility testing results for later use
+                const positionInfo = await this.testPositionFlexibility(
                     player, 
                     positionCode as Position
                 );
+                playerSecondaryPositions.set(playerId, positionInfo);
     
                 // Apply all multipliers including versatility
-                const adjustedScore = normalizedScore * ageMultiplier * devMultiplier * (1 + versatilityBonus);
+                const adjustedScore = normalizedScore * ageMultiplier * devMultiplier * (1 + positionInfo.versatilityBonus);
                 adjustedScores.set(playerId, adjustedScore);
             }
+            
+            // Now calculate scheme scores with secondary position information
+            const schemeScores = await this.calculateSchemeSpecificScores(
+                players, 
+                positionCode as Position, 
+                playerSecondaryPositions
+            );
     
-            // Re-normalize adjusted scores
+            // Re-normalize adjusted scores (but NOT scheme scores)
             const values = Array.from(adjustedScores.values());
             if (values.length === 0) return;
-    
+
             const mean = values.reduce((a, b) => a + b) / values.length;
             const stdDev = Math.sqrt(
                 values.map(x => Math.pow(x - mean, 2))
-                      .reduce((a, b) => a + b) / values.length
-            );
+                    .reduce((a, b) => a + b) / values.length
+            );    
     
-
             const analysisUpdates: PlayerAnalysis[] = [];
-
+    
             for (const [playerId, adjustedScore] of adjustedScores) {
                 const player = players.find(p => p.id === playerId);
                 if (!player || !player.stats?.[0]) continue;
-    
+            
                 const baseScore = normalizedScores.get(playerId) || 0;
                 const ageMultiplier = this.calculateAgeMultiplier(player.age);
                 const devMultiplier = this.calculateDevTraitMultiplier(player.draftData?.developmentTrait ?? 0);
-                
-                // Get versatility information
-                const { secondaryPositions, versatilityBonus } = 
-                await this.testPositionFlexibility(player, positionCode as Position);
-    
+                const positionInfo = playerSecondaryPositions.get(playerId);
+            
                 let analysis = await this.findByPlayer(playerId);
                 if (!analysis) {
                     analysis = new PlayerAnalysis();
                     analysis.player = { id: playerId } as Player;
                 }
-    
+            
                 // Store all the information
                 analysis.normalizedScore = baseScore;
                 analysis.basePositionTierScore = baseScore;
                 analysis.ageMultiplier = ageMultiplier;
                 analysis.developmentMultiplier = devMultiplier;
-                analysis.versatilityBonus = versatilityBonus;
+                analysis.versatilityBonus = positionInfo?.versatilityBonus || 0;
                 
                 // Store secondary positions and their scores
-                analysis.secondaryPositions = this.convertToSecondaryPositions(secondaryPositions);
-    
+                if (positionInfo) {
+                    analysis.secondaryPositions = this.convertToSecondaryPositions(positionInfo.secondaryPositions);
+                }
+            
                 // Calculate final score with all factors
                 const zScore = (adjustedScore - mean) / stdDev;
                 analysis.adjustedScore = Math.min(100, Math.max(0, 50 + (zScore * 15)));
                 
+                // Get scheme-specific ratings from schemeScores
+                const playerSchemeScores = schemeScores.get(playerId);
+                if (playerSchemeScores) {
+                    analysis.schemeSpecificRatings = playerSchemeScores.primary;
+                }
+                
                 analysis.positionTier = this.assignTier(analysis.adjustedScore, positionCode as Position);
                 analysis.calculatedAt = new Date();
-    
+            
                 analysisUpdates.push(analysis);
             }
     

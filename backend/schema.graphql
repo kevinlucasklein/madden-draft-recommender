@@ -272,7 +272,7 @@ type PlayerAnalysis {
   projectedPick: Int
   rating: PlayerRating
   schemeFitScore: Float!
-  schemeSpecificRatings: JSONObject!
+  schemeSpecificRatings: SchemeSpecificRatings
   secondaryPositions: [SecondaryPosition!]
   versatilityBonus: Float!
   viablePositions: [ViablePosition!]
@@ -398,6 +398,11 @@ type RosterRequirement {
   minimumPlayers: Int!
   position: String!
   positionGroup: String!
+}
+
+type SchemeSpecificRatings {
+  gunBunchFit: Float!
+  nickelFit: Float!
 }
 
 type SecondaryPosition {

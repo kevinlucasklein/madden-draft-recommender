@@ -2,6 +2,80 @@ type StatWeight = {
   [key: string]: number;
 };
 
+export interface SchemeRequirements {
+  gunBunchFit: {
+      QB: {
+          mobility: {
+              speed: number;
+              acceleration: number;
+              agility: number;
+          };
+          passing: {
+              throwPower: number;
+              throwAccuracyShort: number;
+              throwAccuracyMid: number;
+              throwOnTheRun: number;
+          };
+      };
+      WR: {
+          routeRunning: {
+              shortRouteRunning: number;
+              mediumRouteRunning: number;
+              deepRouteRunning: number;
+          };
+          catching: number;
+      };
+      HB: {
+          receiving: {
+              catching: number;
+              shortRouteRunning: number;
+          };
+      };
+      OL: {
+          passBlocking: {
+              passBlockPower: number;
+              passBlockFinesse: number;
+          };
+      };
+  };
+  nickelFit: {
+      DB: {
+          coverage: {
+              manCoverage: number;
+              zoneCoverage: number;
+              press: number;
+          };
+          speed: number;
+          acceleration: number;
+      };
+      LB: {
+          blitzing: {
+              powerMoves: number;
+              finesseMoves: number;
+              blockShedding: number;
+          };
+          speed: number;
+          acceleration: number;
+      };
+      DL: {
+          passRush: {
+              powerMoves: number;
+              finesseMoves: number;
+              blockShedding: number;
+          };
+      };
+  };
+}
+
+export interface SchemeScores {
+  gunBunchFit: number;
+  nickelFit: number;
+}
+
+export interface PlayerSchemeScores {
+  primary: SchemeScores;
+  secondary: Record<Position, SchemeScores>;
+}
 // Define valid position types
 export type Position = 
     | 'QB' | 'HB' | 'FB' | 'WR' | 'TE' 
@@ -630,5 +704,168 @@ SS: {
           kickPower: 90,
           kickAccuracy: 85
       }
+  }
+} as const;
+
+export const SCHEME_THRESHOLDS = {
+  GUN_BUNCH: {
+      QB: {
+          weights: {
+              mobility: 0.4,
+              accuracy: 0.6
+          },
+          thresholds: {
+              mobility: {
+                  speed: 80,
+                  acceleration: 80,
+                  agility: 80
+              },
+              passing: {
+                  throwAccuracyShort: 85,
+                  throwAccuracyMid: 85,
+                  throwOnTheRun: 85
+              }
+          }
+      },
+      WR: {
+          weights: {
+              routeRunning: 0.6,
+              receiving: 0.4
+          },
+          thresholds: {
+              routeRunning: {
+                  shortRouteRunning: 85,
+                  mediumRouteRunning: 85,
+                  deepRouteRunning: 80
+              },
+              receiving: {
+                  catching: 85,
+                  catchInTraffic: 80
+              }
+          }
+      },
+      HB: {
+          weights: {
+              receiving: 0.7,
+              blocking: 0.3
+          },
+          thresholds: {
+              receiving: {
+                  catching: 75,
+                  shortRouteRunning: 75
+              },
+              blocking: {
+                  passBlock: 70
+              }
+          }
+      },
+      TE: {
+        weights: {
+            receiving: 0.6,
+            blocking: 0.4
+        },
+        thresholds: {
+            receiving: {
+                catching: 85,
+                shortRouteRunning: 80,
+                mediumRouteRunning: 80,
+                catchInTraffic: 80
+            },
+            blocking: {
+                passBlock: 75,
+                impactBlocking: 75,
+                strength: 75
+            }
+        }
+    },
+      OL: {
+        weights: {
+            passBlock: 0.7,  // Base weight, adjusted per position
+            runBlock: 0.3    // Base weight, adjusted per position
+        },
+        thresholds: {
+            passBlocking: {
+                passBlockPower: 80,
+                passBlockFinesse: 80,
+                strength: 75,
+                awareness: 75
+            },
+            runBlocking: {
+                runBlock: 75,
+                impactBlocking: 75
+            }
+        }
+    }
+  },
+  NICKEL_DBL_MUG: {
+      DB: {
+        weights: {
+            man: 0.5,     // Base weight, adjusted per position
+            zone: 0.3,    // Base weight, adjusted per position
+            physical: 0.2  // Base weight, adjusted per position
+        },
+        thresholds: {
+            coverage: {
+                manCoverage: 85,
+                press: 80,
+                zoneCoverage: 80,
+                playRecognition: 75
+            },
+            athleticism: {
+                speed: 85,
+                acceleration: 85
+            }
+        }
+    },
+      LB: {
+        weights: {
+            blitz: 0.5,     // Base weight, adjusted per position
+            coverage: 0.3,   // Base weight, adjusted per position
+            physical: 0.2    // Base weight, adjusted per position
+        },
+        thresholds: {
+            blitzing: {
+                powerMoves: 75,
+                finesseMoves: 75,
+                acceleration: 80,
+                pursuit: 80
+            },
+            coverage: {
+                zoneCoverage: 75,
+                manCoverage: 70,
+                playRecognition: 80
+            },
+            physical: {
+                tackle: 80,
+                hitPower: 80,
+                blockShedding: 75,
+                strength: 75
+            }
+        }
+    },
+      DL: {
+        weights: {
+            passRush: 0.5,  // Base weight, adjusted per position
+            speed: 0.3,     // Base weight, adjusted per position
+            power: 0.2      // Base weight, adjusted per position
+        },
+        thresholds: {
+            passRush: {
+                powerMoves: 80,
+                finesseMoves: 80,
+                blockShedding: 80
+            },
+            athleticism: {
+                speed: 75,      // Lower threshold for DL
+                acceleration: 80,
+                agility: 75
+            },
+            power: {
+                strength: 80,
+                tackle: 75,
+                pursuit: 80
+            }
+        }
+    }
   }
 } as const;
