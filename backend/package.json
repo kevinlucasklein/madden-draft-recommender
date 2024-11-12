@@ -19,6 +19,7 @@
     "license": "ISC",
     "dependencies": {
         "@apollo/server": "^4.11.0",
+        "@nestjs/typeorm": "^10.0.2",
         "apollo-server-express": "^3.13.0",
         "cors": "^2.8.5",
         "dotenv": "^16.4.5",

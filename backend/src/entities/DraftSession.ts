@@ -2,6 +2,7 @@ import { Entity, PrimaryGeneratedColumn, Column, OneToMany } from 'typeorm';
 import { ObjectType, Field, Int } from 'type-graphql';
 import { DraftPick } from './DraftPick';
 import { DraftRecommendation } from './DraftRecommendation';
+import { RosterNeeds } from '../types/RosterNeeds';
 
 @ObjectType()
 @Entity('draft_sessions')
@@ -33,4 +34,14 @@ export class DraftSession {
     @Field(() => [DraftRecommendation], { nullable: true })
     @OneToMany(() => DraftRecommendation, recommendation => recommendation.session)
     recommendations?: DraftRecommendation[];
+
+    // Add this method
+    getRosterNeeds(): any {
+        try {
+            return JSON.parse(this.rosterNeeds);
+        } catch (error) {
+            console.error('Error parsing roster needs:', error);
+            return {};
+        }
+    }
 }

@@ -21,9 +21,18 @@ input CreateDraftPickInput {
   sessionId: Int!
 }
 
+input CreateDraftRecommendationInput {
+  pickNumber: Int!
+  playerId: Int!
+  reason: String!
+  recommendationScore: Float!
+  roundNumber: Int!
+  sessionId: Int!
+}
+
 input CreateDraftSessionInput {
   draftPosition: Int!
-  rosterNeeds: String!
+  rosterNeeds: String
   status: String! = "ACTIVE"
 }
 
@@ -181,16 +190,26 @@ type DraftSession {
   status: String!
 }
 
+input GenerateRecommendationsInput {
+  isSnakeDraft: Boolean!
+  limit: Int!
+  pickNumber: Int!
+  roundNumber: Int!
+  sessionId: Int!
+}
+
 """
 The `JSONObject` scalar type represents JSON objects as specified by [ECMA-404](http://www.ecma-international.org/publications/files/ECMA-ST/ECMA-404.pdf).
 """
 scalar JSONObject
 
 type Mutation {
+  addDraftPick(pickNumber: Int!, playerId: Float!, position: String!, roundNumber: Int!, sessionId: Float!): DraftSession!
   calculateAllPositionsAnalysis: Boolean!
   calculatePositionAnalysis(position: String!): Boolean!
   createArchetype(input: CreateArchetypeInput!): Archetype!
   createDraftPick(input: CreateDraftPickInput!): DraftPick!
+  createDraftRecommendation(input: CreateDraftRecommendationInput!): DraftRecommendation!
   createDraftSession(input: CreateDraftSessionInput!): DraftSession!
   createPlayer(input: CreatePlayerInput!): Player!
   createPlayerAbility(input: CreatePlayerAbilityInput!): PlayerAbility!
@@ -201,6 +220,7 @@ type Mutation {
   createTeam(input: CreateTeamInput!): Team!
   deleteArchetype(id: Int!): Boolean!
   deleteDraftPick(id: Int!): Boolean!
+  deleteDraftRecommendation(id: Int!): Boolean!
   deleteDraftSession(id: Int!): Boolean!
   deletePlayer(id: Int!): Boolean!
   deletePlayerAbility(id: Int!): Boolean!
@@ -209,12 +229,14 @@ type Mutation {
   deletePosition(id: Int!): Boolean!
   deleteRosterRequirement(id: Int!): Boolean!
   deleteTeam(id: Int!): Boolean!
+  generateRecommendations(input: GenerateRecommendationsInput!): [DraftRecommendation!]!
   recalculateAllPositionScores: Boolean!
   recalculatePositionScores(position: String!): Boolean!
   recalculateWithSecondaryPositions: Boolean!
   reorderPlayerAbilities(abilityIds: [Int!]!, playerId: Int!): [PlayerAbility!]!
   updateArchetype(id: Int!, input: UpdateArchetypeInput!): Archetype!
   updateDraftPick(id: Int!, input: UpdateDraftPickInput!): DraftPick!
+  updateDraftRecommendation(id: Int!, input: UpdateDraftRecommendationInput!): DraftRecommendation!
   updateDraftSession(id: Int!, input: UpdateDraftSessionInput!): DraftSession!
   updatePlayer(id: Int!, input: UpdatePlayerInput!): Player!
   updatePlayerAbility(id: Int!, input: UpdatePlayerAbilityInput!): PlayerAbility!
@@ -361,9 +383,11 @@ type Query {
   archetype(id: Int!): Archetype
   archetypes: [Archetype!]!
   draftPick(id: Int!): DraftPick
-  draftPicks: [DraftPick!]!
+  draftPicks(sessionId: Int): [DraftPick!]!
   draftPicksBySession(sessionId: Int!): [DraftPick!]!
-  draftSession(id: Int!): DraftSession
+  draftRecommendation(id: Int!): DraftRecommendation
+  draftRecommendations(isSnakeDraft: Boolean! = true, limit: Int! = 10, pickNumber: Int!, roundNumber: Int!, sessionId: Int!): [DraftRecommendation!]!
+  draftSession(id: Float!): DraftSession!
   draftSessions: [DraftSession!]!
   getPlayerAnalysesByPosition(position: String!): [PlayerAnalysis!]!
   latestPlayerRating(playerId: Int!): PlayerRating
@@ -382,6 +406,7 @@ type Query {
   position(id: Int!): Position
   positions: [Position!]!
   positionsByType(type: String!): [Position!]!
+  recommendationsForPick(pickNumber: Int!, roundNumber: Int!, sessionId: Int!): [DraftRecommendation!]!
   rosterRequirement(id: Int!): RosterRequirement
   rosterRequirements: [RosterRequirement!]!
   rosterRequirementsByGroup(group: String!): [RosterRequirement!]!
@@ -433,6 +458,11 @@ input UpdateDraftPickInput {
   pickNumber: Int
   playerId: Int
   roundNumber: Int
+}
+
+input UpdateDraftRecommendationInput {
+  reason: String
+  recommendationScore: Float
 }
 
 input UpdateDraftSessionInput {

@@ -115,6 +115,8 @@ export class DraftPickService {
 
     async create(input: CreateDraftPickInput): Promise<DraftPick> {
         try {
+            console.log('Creating draft pick with input:', input);
+    
             const pick = this.draftPickRepository.create({
                 session: { id: input.sessionId },
                 player: { id: input.playerId },
@@ -123,11 +125,13 @@ export class DraftPickService {
                 draftedPosition: input.draftedPosition,
                 pickedAt: new Date()
             });
-
+    
             const saved = await this.draftPickRepository.save(pick);
+            console.log('Saved draft pick:', saved);
+    
             await this.clearDraftPickCache(undefined, input.sessionId);
-
-            // Fetch the complete draft pick with relations after saving
+    
+            // Fetch the complete draft pick with relations
             const completePick = await this.draftPickRepository.findOne({
                 where: { id: saved.id },
                 relations: {
@@ -139,11 +143,12 @@ export class DraftPickService {
                     }
                 }
             });
-
+    
             if (!completePick) {
                 throw new Error(`Failed to fetch draft pick with id ${saved.id}`);
             }
-
+    
+            console.log('Complete draft pick:', completePick);
             return completePick;
         } catch (error) {
             console.error('Error in create:', error);

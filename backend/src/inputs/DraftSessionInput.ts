@@ -5,11 +5,11 @@ export class CreateDraftSessionInput {
     @Field(() => Int)
     draftPosition!: number;
 
+    @Field(() => String, { nullable: true })
+    rosterNeeds?: string;  // Now optional
+
     @Field(() => String, { defaultValue: "ACTIVE" })
     status?: string;
-
-    @Field(() => String)
-    rosterNeeds!: string;  // This will be a JSON string
 }
 
 @InputType()

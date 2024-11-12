@@ -20,7 +20,8 @@ import { PlayerAnalysisResolver } from './resolvers/PlayerAnalysisResolver';
 import { RosterRequirementResolver } from './resolvers/RosterRequirementResolver';
 import { DraftSessionResolver } from './resolvers/DraftSessionResolver';
 import { DraftPickResolver } from './resolvers/DraftPickResolver';
-
+import { DraftRecommendationResolver } from './resolvers/DraftRecommendationResolver';
+import { RosterOptimizationResolver } from './resolvers/RosterOptimizationResolver';
 interface MyContext {
     requestId: string;
     container: ContainerInstance;  // Changed from typeof Container
@@ -49,6 +50,8 @@ async function main() {
                 RosterRequirementResolver,
                 DraftSessionResolver,
                 DraftPickResolver,
+                DraftRecommendationResolver,
+                RosterOptimizationResolver
             ],
             container: ({ context }) => context.container,
             validate: false,

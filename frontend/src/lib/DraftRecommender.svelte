@@ -66,14 +66,25 @@
 
     interface PlayerAnalysis {
         id: number;
-        bestPosition: string;
         normalizedScore: number;
         positionScores: Record<string, number>;
-        primaryArchetype: string;
-        secondaryArchetype: string;
-        specialTraits: string[];
         viablePositions: ViablePosition[];
-        viablePositionCount: number;
+        basePositionTierScore: number;
+        positionTier: number;
+        ageMultiplier: number;
+        developmentMultiplier: number;
+        schemeFitScore: number;
+        versatilityBonus: number;
+        preDraftCompositeScore: number;
+        adjustedScore: number;
+        secondaryPositions: SecondaryPosition[];
+    }
+
+    interface SecondaryPosition {
+        position: string;
+        score: number;
+        tier: number;
+        isElite: boolean;
     }
 
     type UnitName = 'Offense' | 'Defense' | 'Special Teams';
@@ -648,30 +659,24 @@
                     
                     <!-- Add analysis information -->
                     {#if rec.player.analysis}
-                        {#if rec.player.analysis.bestPosition}
-                            <p>Best Position: {rec.player.analysis.bestPosition}</p>
-                        {/if}
-                        
-                        {#if rec.player.analysis.primaryArchetype}
-                            <p>Type: {rec.player.analysis.primaryArchetype}
-                            {#if rec.player.analysis.secondaryArchetype}
-                                / {rec.player.analysis.secondaryArchetype}
-                            {/if}
-                            </p>
-                        {/if}
-                
-                        {#if rec.player.analysis.viablePositions?.length}
-                            <p>Viable Positions: 
-                                {rec.player.analysis.viablePositions
-                                    .map(vp => `${vp.position} (${vp.score.toFixed(1)}%)`)
-                                    .join(', ')}
-                            </p>
-                        {/if}
-                
-                        {#if rec.player.analysis.specialTraits?.length}
-                            <p>Traits: {rec.player.analysis.specialTraits.join(', ')}</p>
-                        {/if}
+                    <p>Score: {rec.player.analysis.normalizedScore.toFixed(1)}</p>
+                    <p>Position Tier: {rec.player.analysis.positionTier}</p>
+                    
+                    {#if rec.player.analysis.secondaryPositions?.length}
+                        <p>Alternative Positions:</p>
+                        <ul>
+                            {#each rec.player.analysis.secondaryPositions as pos}
+                                <li>
+                                    {pos.position}: {pos.score.toFixed(1)}
+                                    {#if pos.isElite} (Elite){/if}
+                                </li>
+                            {/each}
+                        </ul>
                     {/if}
+                    
+                    <p>Scheme Fit: {(rec.player.analysis.schemeFitScore * 100).toFixed(1)}%</p>
+                    <p>Versatility: {(rec.player.analysis.versatilityBonus * 100).toFixed(1)}%</p>
+                {/if}
                 
                     <p>Historical Draft Position: 
                         {#if rec.player.draftData}

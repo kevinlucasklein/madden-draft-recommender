@@ -21,27 +21,32 @@ export const GENERATE_RECOMMENDATIONS = gql`
           round_pick
         }
         analysis {
-          bestPosition
+          id
           normalizedScore
           positionScores
-          primaryArchetype
-          secondaryArchetype
-          specialTraits
           viablePositions {
             position
             score
             percentageAboveAverage
           }
-          viablePositionCount
+          basePositionTierScore
+          positionTier
+          ageMultiplier
+          developmentMultiplier
+          schemeFitScore
+          versatilityBonus
+          preDraftCompositeScore
+          adjustedScore
+          secondaryPositions {
+            position
+            score
+            tier
+            isElite
+          }
         }
       }
       recommendationScore
       reason
-      suggestedPositions {  # Optional: Add if you want to include position suggestions
-        position
-        score
-        reason
-      }
     }
   }
 `;

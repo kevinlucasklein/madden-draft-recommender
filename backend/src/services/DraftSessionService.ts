@@ -1,5 +1,5 @@
 import { Service } from 'typedi';
-import { Repository } from 'typeorm';
+import { Repository, FindOneOptions } from 'typeorm';
 import { DraftSession } from '../entities/DraftSession';
 import { AppDataSource } from '../config/database';
 import { RedisService } from './RedisService';
@@ -52,29 +52,78 @@ export class DraftSessionService {
         }
     }
 
-    async findOne(id: number): Promise<DraftSession | null> {
+    async findOne(
+        id: number, 
+        options?: FindOneOptions<DraftSession>
+    ): Promise<DraftSession | null> {
         try {
-            const cacheKey = `session:${id}`;
-            const cached = await this.redisService.get<DraftSession>(cacheKey);
-
-            if (cached) return cached;
-
-            const session = await this.sessionRepository.findOne({
+            // Default relations
+            const defaultRelations = {
+                picks: {
+                    player: true
+                }
+            };
+    
+            // Merge options with defaults
+            const findOptions: FindOneOptions<DraftSession> = {
                 where: { id },
-                relations: {
-                    picks: true,
-                    recommendations: true
+                relations: options?.relations ? 
+                    this.deepMerge(defaultRelations, options.relations) : 
+                    defaultRelations,
+                ...options
+            };
+    
+            const session = await this.sessionRepository.findOne(findOptions);
+    
+            if (!session) return null;
+    
+            // Update current counts based on actual picks
+            const rosterNeeds = JSON.parse(session.rosterNeeds);
+            
+            // Reset all current counts to 0
+            Object.keys(rosterNeeds).forEach(pos => {
+                rosterNeeds[pos].current = 0;
+            });
+    
+            // Count actual picks
+            session.picks?.forEach(pick => {
+                const position = pick.draftedPosition;
+                if (rosterNeeds[position]) {
+                    rosterNeeds[position].current++;
                 }
             });
-
-            if (session) {
-                await this.redisService.set(cacheKey, session);
-            }
+    
+            // Update the session with accurate counts
+            session.rosterNeeds = JSON.stringify(rosterNeeds);
+            await this.sessionRepository.save(session);
+    
             return session;
         } catch (error) {
             console.error(`Error in findOne for id ${id}:`, error);
             return null;
         }
+    }
+    
+    // Helper method to deep merge objects
+    private deepMerge(target: any, source: any) {
+        const output = Object.assign({}, target);
+        if (this.isObject(target) && this.isObject(source)) {
+            Object.keys(source).forEach(key => {
+                if (this.isObject(source[key])) {
+                    if (!(key in target))
+                        Object.assign(output, { [key]: source[key] });
+                    else
+                        output[key] = this.deepMerge(target[key], source[key]);
+                } else {
+                    Object.assign(output, { [key]: source[key] });
+                }
+            });
+        }
+        return output;
+    }
+    
+    private isObject(item: any): boolean {
+        return (item && typeof item === 'object' && !Array.isArray(item));
     }
 
     async findActive(): Promise<DraftSession | null> {

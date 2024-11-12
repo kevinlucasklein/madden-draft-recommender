@@ -12,7 +12,12 @@ export class DraftPickResolver {
     ) {}
 
     @Query(() => [DraftPick])
-    async draftPicks() {
+    async draftPicks(
+        @Arg('sessionId', () => Int, { nullable: true }) sessionId?: number
+    ): Promise<DraftPick[]> {
+        if (sessionId) {
+            return this.draftPickService.findBySession(sessionId);
+        }
         return this.draftPickService.findAll();
     }
 
