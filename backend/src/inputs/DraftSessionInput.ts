@@ -10,6 +10,9 @@ export class CreateDraftSessionInput {
 
     @Field(() => String, { defaultValue: "ACTIVE" })
     status?: string;
+
+    @Field(() => Boolean, { defaultValue: true })
+    isSnakeDraft?: boolean;
 }
 
 @InputType()

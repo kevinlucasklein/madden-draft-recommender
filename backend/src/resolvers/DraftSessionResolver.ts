@@ -8,6 +8,7 @@ import { DraftPick } from '../entities/DraftPick';
 import { Player } from '../entities/Player';
 import { DraftPickService } from '../services/DraftPickService';
 import { RosterOptimizationService } from '../services/RosterOptimizationService';
+import { DraftRecommendationService } from '../services/DraftRecommendationService';
 
 @Service()
 @Resolver(of => DraftSession)
@@ -15,7 +16,8 @@ export class DraftSessionResolver {
     constructor(
         private sessionService: DraftSessionService,
         private draftPickService: DraftPickService,
-        private rosterOptimizationService: RosterOptimizationService
+        private rosterOptimizationService: RosterOptimizationService,
+        private recommendationService: DraftRecommendationService
     ) {}
 
     @Query(() => [DraftSession])
@@ -59,7 +61,17 @@ export class DraftSessionResolver {
         session.status = 'active';
         session.rosterNeeds = JSON.stringify(DEFAULT_ROSTER_NEEDS);
         
-        return this.sessionService.create(session);
+        // Create the session first to get the ID
+        const createdSession = await this.sessionService.create(session);
+
+        // Initialize draft picks in the recommendation service
+        await this.recommendationService.initializeSession(
+            createdSession.id,
+            input.draftPosition,
+            input.isSnakeDraft ?? true  // Add isSnakeDraft to your input type if not already there
+        );
+
+        return createdSession;
     }
 
     @Mutation(() => DraftSession)

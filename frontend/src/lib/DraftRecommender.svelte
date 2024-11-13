@@ -3,7 +3,6 @@
     import { onMount } from 'svelte';
     import { GENERATE_RECOMMENDATIONS } from './graphql/queries/draftRecommendations';
     import { CREATE_DRAFT_SESSION } from './graphql/queries/createDraftSession';
-    import { GET_ROSTER_REQUIREMENTS } from './graphql/queries/rosterRequirements';
     import { CREATE_DRAFT_PICK, GET_DRAFT_PICKS_BY_SESSION } from './graphql/queries/draftPicks';
     interface Position {
         name: string;
@@ -37,19 +36,13 @@
         reason: string;
     }
 
-    interface RosterRequirement {
-        position: string;
-        minimumPlayers: number;
-        maximumPlayers: number;
-        positionGroup: string;
-        isRequired: boolean;
-    }
-
     interface DraftedPlayer {
         player: Player;
         round: number;
         pick: number;
         overall: number;
+        isSecondary?: boolean;  // Add this
+        secondaryScore?: number;  // Add this
     }
 
     interface RosterNeed {
@@ -62,6 +55,12 @@
         position: string;
         score: number;
         percentageAboveAverage: number;
+    }
+
+    interface DraftPick {
+        round: number;
+        pick: number;
+        overall: number;
     }
 
     interface PlayerAnalysis {
@@ -87,6 +86,74 @@
         isElite: boolean;
     }
 
+    function getScoreClass(score: number): string {
+        if (score >= 85) return 'score-high';
+        if (score >= 70) return 'score-medium';
+        return 'score-low';
+    }
+
+    function formatPosition(position: string): string {
+        const positionMap: Record<string, string> = {
+            'QB': 'Quarterback',
+            'HB': 'Running Back',
+            'FB': 'Fullback',
+            'WR': 'Wide Receiver',
+            'TE': 'Tight End',
+            'LT': 'Left Tackle',
+            'LG': 'Left Guard',
+            'C': 'Center',
+            'RG': 'Right Guard',
+            'RT': 'Right Tackle',
+            'LE': 'Left End',
+            'RE': 'Right End',
+            'DT': 'Defensive Tackle',
+            'LOLB': 'Left OLB',
+            'MLB': 'Middle LB',
+            'ROLB': 'Right OLB',
+            'CB': 'Cornerback',
+            'FS': 'Free Safety',
+            'SS': 'Strong Safety',
+            'K': 'Kicker',
+            'P': 'Punter'
+        };
+        return positionMap[position] || position;
+    }
+
+    const rosterRequirements = {
+        QB: { min: 1, max: 2, current: 0 },
+        WR: { min: 3, max: 6, current: 0 },
+        HB: { min: 1, max: 3, current: 0 },
+        TE: { min: 1, max: 3, current: 0 },
+        LT: { min: 1, max: 2, current: 0 },
+        RT: { min: 1, max: 2, current: 0 },
+        LG: { min: 1, max: 2, current: 0 },
+        RG: { min: 1, max: 2, current: 0 },
+        C: { min: 1, max: 2, current: 0 },
+        RE: { min: 1, max: 3, current: 0 },
+        LE: { min: 1, max: 3, current: 0 },
+        DT: { min: 2, max: 4, current: 0 },
+        LOLB: { min: 1, max: 2, current: 0 },
+        ROLB: { min: 1, max: 2, current: 0 },
+        MLB: { min: 1, max: 3, current: 0 },
+        CB: { min: 3, max: 6, current: 0 },
+        FS: { min: 1, max: 2, current: 0 },
+        SS: { min: 1, max: 2, current: 0 },
+        K: { min: 1, max: 1, current: 0 },
+        P: { min: 1, max: 1, current: 0 },
+        FB: { min: 0, max: 1, current: 0 }
+    };
+
+    function getTierDescription(tier: number): string {
+        switch(tier) {
+            case 1: return 'Elite';
+            case 2: return 'High Quality';
+            case 3: return 'Above Average';
+            case 4: return 'Average';
+            case 5: return 'Below Average';
+            default: return 'Development Needed';
+        }
+    }
+
     type UnitName = 'Offense' | 'Defense' | 'Special Teams';
     type PositionGroups = Record<UnitName, string[]>;
     type PositionGroup = keyof typeof POSITION_GROUPS;
@@ -97,44 +164,15 @@
         'Special Teams': ['K', 'P']
     } as const;
 
-    const DEFAULT_REQUIREMENTS: RosterRequirement[] = [
-        // Offense
-        { position: 'QB', minimumPlayers: 2, maximumPlayers: 4, positionGroup: 'Offense', isRequired: true },
-        { position: 'HB', minimumPlayers: 3, maximumPlayers: 5, positionGroup: 'Offense', isRequired: true },
-        { position: 'FB', minimumPlayers: 1, maximumPlayers: 2, positionGroup: 'Offense', isRequired: true },
-        { position: 'WR', minimumPlayers: 5, maximumPlayers: 7, positionGroup: 'Offense', isRequired: true },
-        { position: 'TE', minimumPlayers: 2, maximumPlayers: 4, positionGroup: 'Offense', isRequired: true },
-        { position: 'LT', minimumPlayers: 1, maximumPlayers: 2, positionGroup: 'Offense', isRequired: true },
-        { position: 'LG', minimumPlayers: 1, maximumPlayers: 2, positionGroup: 'Offense', isRequired: true },
-        { position: 'C', minimumPlayers: 1, maximumPlayers: 2, positionGroup: 'Offense', isRequired: true },
-        { position: 'RG', minimumPlayers: 1, maximumPlayers: 2, positionGroup: 'Offense', isRequired: true },
-        { position: 'RT', minimumPlayers: 1, maximumPlayers: 2, positionGroup: 'Offense', isRequired: true },
-        
-        // Defense
-        { position: 'LE', minimumPlayers: 1, maximumPlayers: 2, positionGroup: 'Defense', isRequired: true },
-        { position: 'DT', minimumPlayers: 2, maximumPlayers: 4, positionGroup: 'Defense', isRequired: true },
-        { position: 'RE', minimumPlayers: 1, maximumPlayers: 2, positionGroup: 'Defense', isRequired: true },
-        { position: 'LOLB', minimumPlayers: 1, maximumPlayers: 2, positionGroup: 'Defense', isRequired: true },
-        { position: 'MLB', minimumPlayers: 2, maximumPlayers: 3, positionGroup: 'Defense', isRequired: true },
-        { position: 'ROLB', minimumPlayers: 1, maximumPlayers: 2, positionGroup: 'Defense', isRequired: true },
-        { position: 'CB', minimumPlayers: 4, maximumPlayers: 6, positionGroup: 'Defense', isRequired: true },
-        { position: 'FS', minimumPlayers: 1, maximumPlayers: 2, positionGroup: 'Defense', isRequired: true },
-        { position: 'SS', minimumPlayers: 1, maximumPlayers: 2, positionGroup: 'Defense', isRequired: true },
-        
-        // Special Teams
-        { position: 'K', minimumPlayers: 1, maximumPlayers: 1, positionGroup: 'Special Teams', isRequired: true },
-        { position: 'P', minimumPlayers: 1, maximumPlayers: 1, positionGroup: 'Special Teams', isRequired: true }
-    ];
-
     // Store recommendations
     // Store recommendations
     let recommendations: Recommendation[] = [];
-    let isSettingRequirements = true;  // New state to control setup phase
-    let editableRequirements = DEFAULT_REQUIREMENTS;  // Editable copy of requirements
-    let rosterRequirements: RosterRequirement[] = [];
     let rosterNeeds: Record<string, RosterNeed> = {};
     let draftedPlayers: DraftedPlayer[] = [];
     let currentRosterCounts: Record<string, number> = {};
+    // Add this to your component's state
+    let draftPicks: DraftPick[] = [];
+    let currentPickIndex = 0;
 
     // Form inputs - simplified
     let sessionId: number | null = null;
@@ -152,67 +190,88 @@
     let currentRound: number = 1;
     let currentPick: number = 1;
 
-    function calculateCurrentPick(round: number, firstPick: number, snake: boolean): number {
-        if (!snake) {
-            return firstPick;
+    // Add this function to generate all picks for the session
+    function generateDraftPicks(firstRoundPick: number, isSnakeDraft: boolean): DraftPick[] {
+        const TOTAL_ROUNDS = 54;
+        const TOTAL_TEAMS = 32;
+        const picks: DraftPick[] = [];
+
+        for (let round = 1; round <= TOTAL_ROUNDS; round++) {
+            let pick: number;
+            
+            if (isSnakeDraft) {
+                // For even rounds, reverse the order
+                if (round % 2 === 0) {
+                    pick = TOTAL_TEAMS - firstRoundPick + 1;
+                } else {
+                    pick = firstRoundPick;
+                }
+            } else {
+                // For non-snake drafts, keep the same pick position
+                pick = firstRoundPick;
+            }
+
+            picks.push({
+                round,
+                pick,
+                overall: ((round - 1) * TOTAL_TEAMS) + pick
+            });
         }
-        
-        // For even-numbered rounds, reverse the pick order
-        if (round % 2 === 0) {
-            return TOTAL_TEAMS - firstPick + 1;
-        }
-        
-        // For odd-numbered rounds, use the original pick
-        return firstPick;
+
+        return picks;
     }
 
+    // Update nextPick function
     async function nextPick() {
-        if (currentRound < 54) {
-            currentRound++;
-            currentPick = calculateCurrentPick(currentRound, firstRoundPick, isSnakeDraft);
+        if (currentPickIndex < draftPicks.length - 1) {
+            currentPickIndex++;
+            const nextDraftPick = draftPicks[currentPickIndex];
+            currentRound = nextDraftPick.round;
+            currentPick = nextDraftPick.pick;
             
             try {
-                const result = await client.mutate({
-                    mutation: GENERATE_RECOMMENDATIONS,
+                const result = await client.query({
+                    query: GENERATE_RECOMMENDATIONS,
                     variables: {
-                        input: {
-                            sessionId,
-                            roundNumber: currentRound,
-                            pickNumber: currentPick,
-                            isSnakeDraft,
-                            limit
-                        }
+                        sessionId,
+                        roundNumber: currentRound,
+                        pickNumber: currentPick,
+                        limit,
+                        isSnakeDraft
                     }
                 });
                 
-                recommendations = result.data.generateRecommendations;
+                recommendations = result.data.draftRecommendations;
             } catch (e) {
+                console.error('Error fetching next recommendations:', e);
                 error = e instanceof Error ? e.message : 'An unknown error occurred';
             }
         }
     }
 
+    // Also update previousPick function for consistency
     async function previousPick() {
-        if (currentRound > 1) {
-            currentRound--;
-            currentPick = calculateCurrentPick(currentRound, firstRoundPick, isSnakeDraft);
+        if (currentPickIndex > 0) {
+            currentPickIndex--;
+            const prevDraftPick = draftPicks[currentPickIndex];
+            currentRound = prevDraftPick.round;
+            currentPick = prevDraftPick.pick;
             
             try {
-                const result = await client.mutate({
-                    mutation: GENERATE_RECOMMENDATIONS,
+                const result = await client.query({
+                    query: GENERATE_RECOMMENDATIONS,
                     variables: {
-                        input: {
-                            sessionId,
-                            roundNumber: currentRound,
-                            pickNumber: currentPick,
-                            isSnakeDraft,
-                            limit
-                        }
+                        sessionId,
+                        roundNumber: currentRound,
+                        pickNumber: currentPick,
+                        limit,
+                        isSnakeDraft
                     }
                 });
                 
-                recommendations = result.data.generateRecommendations;
+                recommendations = result.data.draftRecommendations;
             } catch (e) {
+                console.error('Error fetching previous recommendations:', e);
                 error = e instanceof Error ? e.message : 'An unknown error occurred';
             }
         }
@@ -241,141 +300,135 @@
     }
 
     async function createDraftSession() {
-        try {
-            const result = await client.mutate({
-                mutation: CREATE_DRAFT_SESSION,
-                variables: {
-                    input: {
-                        draftPosition: firstRoundPick,
-                        status: 'ACTIVE',
-                        rosterNeeds: JSON.stringify(rosterNeeds)
-                    }
+    try {
+        const result = await client.mutate({
+            mutation: CREATE_DRAFT_SESSION,
+            variables: {
+                input: {
+                    draftPosition: firstRoundPick,  // This is from the form
+                    status: 'ACTIVE',
+                    // isSnakeDraft was missing! Let's add it:
+                    isSnakeDraft: isSnakeDraft  // This is from the form checkbox
                 }
-            });
-            
-            sessionId = result.data.createDraftSession.id;
-            return sessionId;
-        } catch (e) {
-            error = e instanceof Error ? e.message : 'Failed to create draft session';
-            throw e;
-        }
+            }
+        });
+        
+        sessionId = result.data.createDraftSession.id;
+        return sessionId;
+    } catch (e) {
+        error = e instanceof Error ? e.message : 'Failed to create draft session';
+        throw e;
     }
+}
 
+// Then update handleSubmit
     async function handleSubmit() {
         loading = true;
         error = null;
         
         try {
-            sessionId = await createDraftSession();
-            currentPick = calculateCurrentPick(currentRound, firstRoundPick, isSnakeDraft);
+            console.log('Starting draft session...');
+            draftPicks = generateDraftPicks(firstRoundPick, isSnakeDraft);
+            currentPickIndex = 0;
+            
+            console.log('Creating draft session...');
+            const sessionResult = await createDraftSession();
+            sessionId = sessionResult;
+            console.log('Session created:', sessionId);
+            
+            currentRound = draftPicks[currentPickIndex].round;
+            currentPick = draftPicks[currentPickIndex].pick;
             sessionStarted = true;
             
-            await loadDraftPicks(); 
+            console.log('Loading draft picks...');
+            await loadDraftPicks();
             
-            const result = await client.mutate({
-                mutation: GENERATE_RECOMMENDATIONS,
+            console.log('Fetching recommendations...', {
+                sessionId,
+                roundNumber: currentRound,
+                pickNumber: currentPick,
+                limit,
+                isSnakeDraft
+            });
+
+            const result = await client.query({
+                query: GENERATE_RECOMMENDATIONS,
                 variables: {
-                    input: {
-                        sessionId,
-                        roundNumber: currentRound,
-                        pickNumber: currentPick,
-                        isSnakeDraft,
-                        limit
-                    }
+                    sessionId,
+                    roundNumber: currentRound,
+                    pickNumber: currentPick,
+                    limit,
+                    isSnakeDraft
                 }
             });
             
-            recommendations = result.data.generateRecommendations;
+            console.log('Recommendations received:', result.data);
+            recommendations = result.data.draftRecommendations;
+            
+            loading = false;
         } catch (e) {
+            console.error('Error in handleSubmit:', e);
             error = e instanceof Error ? e.message : 'An unknown error occurred';
             sessionStarted = false;
-        } finally {
             loading = false;
         }
     }
 
-    onMount(async () => {
-        try {
-            const result = await client.query({
-                query: GET_ROSTER_REQUIREMENTS
-            });
-            // If backend requirements exist, use those instead of defaults
-            if (result.data.rosterRequirements?.length > 0) {
-                editableRequirements = result.data.rosterRequirements;
-            }
-        } catch (e) {
-            error = e instanceof Error ? e.message : 'Failed to load roster requirements';
-            // On error, fall back to default requirements
-            editableRequirements = DEFAULT_REQUIREMENTS;
-        }
-    });
-
-    onMount(async () => {
-        try {
-            const result = await client.query({
-                query: GET_ROSTER_REQUIREMENTS
-            });
-            rosterRequirements = result.data.rosterRequirements;
-            
-            // Initialize roster needs from requirements
-            rosterNeeds = rosterRequirements.reduce((acc, req) => {
-                acc[req.position] = {
-                    position: req.position,
-                    needed: req.minimumPlayers,
-                    maximum: req.maximumPlayers
-                };
-                return acc;
-            }, {} as Record<string, RosterNeed>);
-        } catch (e) {
-            error = e instanceof Error ? e.message : 'Failed to load roster requirements';
-        }
-    });
-
+    // Update the updateRosterCounts function to handle secondary positions
     function updateRosterCounts() {
-        currentRosterCounts = draftedPlayers.reduce((acc, dp) => {
-            const position = dp.player.ratings[0]?.position?.code || 'Unknown';
-            acc[position] = (acc[position] || 0) + 1;
-            return acc;
-        }, {} as Record<string, number>);
+        currentRosterCounts = {};
+        
+        draftedPlayers.forEach(dp => {
+            // Add primary position
+            const primaryPosition = dp.player.ratings[0]?.position?.code || 'Unknown';
+            currentRosterCounts[primaryPosition] = (currentRosterCounts[primaryPosition] || 0) + 1;
+            
+            // Add secondary positions if they exist and have a good enough score
+            dp.player.analysis?.secondaryPositions?.forEach(secPos => {
+                if (secPos.score >= 65) { // Lowered threshold to match Khalil Mack's case
+                    currentRosterCounts[secPos.position] = (currentRosterCounts[secPos.position] || 0) + 1;
+                }
+            });
+        });
     }
 
+    // Update the draftPlayer function to properly handle the response
     async function draftPlayer(recommendation: Recommendation) {
         try {
             const position = recommendation.player.ratings[0]?.position?.code || 'Unknown';
             
-            // Update roster needs
-            if (rosterNeeds[position]) {
-                rosterNeeds[position].needed = Math.max(0, rosterNeeds[position].needed - 1);
-            }
-
-            // Create draft pick in backend
             const result = await client.mutate({
                 mutation: CREATE_DRAFT_PICK,
                 variables: {
-                    input: {
-                        sessionId,
-                        playerId: recommendation.player.id,
-                        roundNumber: currentRound,
-                        pickNumber: currentPick,
-                        draftedPosition: position
-                    }
+                    sessionId,
+                    playerId: recommendation.player.id,
+                    position: position,
+                    roundNumber: currentRound,
+                    pickNumber: currentPick
                 }
             });
 
-            // Update local state
+            // Update local state with the complete player data
             const draftedPlayer: DraftedPlayer = {
-                player: recommendation.player,
+                player: recommendation.player,  // Use the full player data from recommendation
                 round: currentRound,
                 pick: currentPick,
-                overall: ((currentRound - 1) * TOTAL_TEAMS) + currentPick
+                overall: draftPicks[currentPickIndex].overall
             };
 
             draftedPlayers = [...draftedPlayers, draftedPlayer];
-            updateRosterCounts();
             
-            // Move to next pick
+            // Parse the rosterNeeds JSON if it's returned as a string
+            if (typeof result.data.addDraftPick.rosterNeeds === 'string') {
+                rosterNeeds = JSON.parse(result.data.addDraftPick.rosterNeeds);
+            } else {
+                rosterNeeds = result.data.addDraftPick.rosterNeeds;
+            }
+            
+            updateRosterCounts();
             await nextPick();
         } catch (e) {
+            console.error('Error drafting player:', e);
             error = e instanceof Error ? e.message : 'Failed to draft player';
         }
     }
@@ -385,8 +438,10 @@
         updateRosterCounts();
     }
 
+    // Update getDraftedPlayersByPosition to use lower threshold
     function getDraftedPlayersByPosition(): Record<string, DraftedPlayer[]> {
-        // Sort positions in a logical football order
+        console.log("Starting getDraftedPlayersByPosition");
+        
         const positionOrder = [
             'QB', 'HB', 'FB', 
             'WR', 'TE', 
@@ -397,17 +452,48 @@
             'K', 'P'
         ];
 
-        // Group players by position
-        const grouped = draftedPlayers.reduce((acc, player) => {
-            const position = player.player.ratings[0]?.position?.code || 'Unknown';
-            if (!acc[position]) {
-                acc[position] = [];
-            }
-            acc[position].push(player);
-            return acc;
-        }, {} as Record<string, DraftedPlayer[]>);
+        const grouped: Record<string, DraftedPlayer[]> = {};
+        
+        draftedPlayers.forEach(player => {
+            console.log(`Processing player:`, {
+                name: `${player.player.firstName} ${player.player.lastName}`,
+                primaryPosition: player.player.ratings[0]?.position?.code,
+                secondaryPositions: player.player.analysis?.secondaryPositions
+            });
 
-        // Sort positions according to positionOrder
+            const primaryPosition = player.player.ratings[0]?.position?.code || 'Unknown';
+            if (!grouped[primaryPosition]) {
+                grouped[primaryPosition] = [];
+            }
+            grouped[primaryPosition].push({
+                ...player,
+                isSecondary: false
+            });
+            console.log(`Added to primary position ${primaryPosition}`);
+
+            // Changed threshold from 70 to 65
+            player.player.analysis?.secondaryPositions?.forEach(secPos => {
+                console.log(`Checking secondary position:`, {
+                    position: secPos.position,
+                    score: secPos.score,
+                    threshold: 65  // Updated this value
+                });
+                
+                if (secPos.score >= 65) {  // Updated this value
+                    if (!grouped[secPos.position]) {
+                        grouped[secPos.position] = [];
+                    }
+                    grouped[secPos.position].push({
+                        ...player,
+                        isSecondary: true,
+                        secondaryScore: secPos.score
+                    });
+                    console.log(`Added to secondary position ${secPos.position}`);
+                }
+            });
+        });
+
+        console.log("Final grouped positions:", grouped);
         return Object.fromEntries(
             Object.entries(grouped).sort(([posA], [posB]) => {
                 const indexA = positionOrder.indexOf(posA);
@@ -451,154 +537,11 @@
         const count = currentRosterCounts[position] || 0;
         return count >= (rosterNeeds[position]?.maximum || 0);
     }
-
-    function confirmRequirements() {
-        rosterRequirements = editableRequirements;
-        // Initialize roster needs from confirmed requirements
-        rosterNeeds = rosterRequirements.reduce((acc, req) => {
-            acc[req.position] = {
-                position: req.position,
-                needed: req.minimumPlayers,
-                maximum: req.maximumPlayers
-            };
-            return acc;
-        }, {} as Record<string, RosterNeed>);
-        isSettingRequirements = false;
-    }
-
-    function updateRequirement(position: string, field: 'minimumPlayers' | 'maximumPlayers', value: number) {
-        editableRequirements = editableRequirements.map(req => 
-            req.position === position 
-                ? { ...req, [field]: Math.max(0, value) }
-                : req
-        );
-    }
     
 </script>
 
 <div class="draft-recommender">
     <h2>Draft Recommender</h2>
-    
-    {#if isSettingRequirements}
-    <div class="requirements-setup">
-        <h3>Set Roster Requirements</h3>
-        <div class="requirements-grid">
-            <!-- Offense -->
-            <div class="position-group">
-                <h4>Offense</h4>
-                <div class="positions">
-                    {#each POSITION_GROUPS['Offense'] as position}
-                        {@const requirement = editableRequirements.find(r => r.position === position)}
-                        {#if requirement}
-                            <div class="requirement-item">
-                                <span class="position-label">{position}</span>
-                                <div class="requirement-inputs">
-                                    <div class="input-group">
-                                        <label for="{position}-min">Minimum:</label>
-                                        <input 
-                                            type="number" 
-                                            id="{position}-min"
-                                            min="0"
-                                            value={requirement.minimumPlayers}
-                                            on:input={(e) => updateRequirement(position, 'minimumPlayers', parseInt(e.currentTarget.value))}
-                                        />
-                                    </div>
-                                    <div class="input-group">
-                                        <label for="{position}-max">Maximum:</label>
-                                        <input 
-                                            type="number"
-                                            id="{position}-max"
-                                            min="0"
-                                            value={requirement.maximumPlayers}
-                                            on:input={(e) => updateRequirement(position, 'maximumPlayers', parseInt(e.currentTarget.value))}
-                                        />
-                                    </div>
-                                </div>
-                            </div>
-                        {/if}
-                    {/each}
-                </div>
-            </div>
-    
-            <!-- Defense -->
-            <div class="position-group">
-                <h4>Defense</h4>
-                <div class="positions">
-                    {#each POSITION_GROUPS['Defense'] as position}
-                        {@const requirement = editableRequirements.find(r => r.position === position)}
-                        {#if requirement}
-                            <div class="requirement-item">
-                                <span class="position-label">{position}</span>
-                                <div class="requirement-inputs">
-                                    <div class="input-group">
-                                        <label for="{position}-min">Minimum:</label>
-                                        <input 
-                                            type="number" 
-                                            id="{position}-min"
-                                            min="0"
-                                            value={requirement.minimumPlayers}
-                                            on:input={(e) => updateRequirement(position, 'minimumPlayers', parseInt(e.currentTarget.value))}
-                                        />
-                                    </div>
-                                    <div class="input-group">
-                                        <label for="{position}-max">Maximum:</label>
-                                        <input 
-                                            type="number"
-                                            id="{position}-max"
-                                            min="0"
-                                            value={requirement.maximumPlayers}
-                                            on:input={(e) => updateRequirement(position, 'maximumPlayers', parseInt(e.currentTarget.value))}
-                                        />
-                                    </div>
-                                </div>
-                            </div>
-                        {/if}
-                    {/each}
-                </div>
-            </div>
-    
-            <!-- Special Teams -->
-            <div class="position-group">
-                <h4>Special Teams</h4>
-                <div class="positions">
-                    {#each POSITION_GROUPS['Special Teams'] as position}
-                        {@const requirement = editableRequirements.find(r => r.position === position)}
-                        {#if requirement}
-                            <div class="requirement-item">
-                                <span class="position-label">{position}</span>
-                                <div class="requirement-inputs">
-                                    <div class="input-group">
-                                        <label for="{position}-min">Minimum:</label>
-                                        <input 
-                                            type="number" 
-                                            id="{position}-min"
-                                            min="0"
-                                            value={requirement.minimumPlayers}
-                                            on:input={(e) => updateRequirement(position, 'minimumPlayers', parseInt(e.currentTarget.value))}
-                                        />
-                                    </div>
-                                    <div class="input-group">
-                                        <label for="{position}-max">Maximum:</label>
-                                        <input 
-                                            type="number"
-                                            id="{position}-max"
-                                            min="0"
-                                            value={requirement.maximumPlayers}
-                                            on:input={(e) => updateRequirement(position, 'maximumPlayers', parseInt(e.currentTarget.value))}
-                                        />
-                                    </div>
-                                </div>
-                            </div>
-                        {/if}
-                    {/each}
-                </div>
-            </div>
-        </div>
-        <button class="confirm-button" on:click={confirmRequirements}>
-            Confirm Requirements & Continue
-        </button>
-    </div>
-    {:else}
     <form on:submit|preventDefault={handleSubmit} class="recommendation-form">
         <div class="form-group">
             <label for="firstRoundPick">Your First Round Pick:</label>
@@ -635,15 +578,18 @@
             {loading ? 'Generating...' : 'Start Draft'}
         </button>
     </form>
-    {/if}
 
     {#if recommendations.length > 0}
     <div class="draft-status-container">
-        <button on:click={previousPick} disabled={currentRound === 1}>
+        <button on:click={previousPick} disabled={currentPickIndex === 0}>
             Previous Pick
         </button>
-        <span>Round {currentRound}, Pick {currentPick} {#if isSnakeDraft}(Snake Draft){/if}</span>
-        <button on:click={nextPick} disabled={currentRound >= 54}>
+        <span>
+            Round {currentRound}, Pick {currentPick} 
+            (Overall #{draftPicks[currentPickIndex]?.overall})
+            {#if isSnakeDraft}(Snake Draft){/if}
+        </span>
+        <button on:click={nextPick} disabled={currentPickIndex >= draftPicks.length - 1}>
             Next Pick
         </button>
     </div>
@@ -654,97 +600,138 @@
             {#each recommendations as rec}
                 <div class="recommendation-card">
                     <h4>{rec.player.firstName || ''} {rec.player.lastName || ''}</h4>
-                    <p>Position: {rec.player.ratings?.[0]?.position?.name || 'Unknown'}</p>
-                    <p>Overall Rating: {rec.player.ratings?.[0]?.overallRating || 'N/A'}</p>
                     
-                    <!-- Add analysis information -->
-                    {#if rec.player.analysis}
-                    <p>Score: {rec.player.analysis.normalizedScore.toFixed(1)}</p>
-                    <p>Position Tier: {rec.player.analysis.positionTier}</p>
-                    
-                    {#if rec.player.analysis.secondaryPositions?.length}
-                        <p>Alternative Positions:</p>
-                        <ul>
-                            {#each rec.player.analysis.secondaryPositions as pos}
-                                <li>
-                                    {pos.position}: {pos.score.toFixed(1)}
-                                    {#if pos.isElite} (Elite){/if}
-                                </li>
-                            {/each}
-                        </ul>
-                    {/if}
-                    
-                    <p>Scheme Fit: {(rec.player.analysis.schemeFitScore * 100).toFixed(1)}%</p>
-                    <p>Versatility: {(rec.player.analysis.versatilityBonus * 100).toFixed(1)}%</p>
-                {/if}
+                    <div class="player-base-info">
+                        <div>
+                            <strong>{formatPosition(rec.player.ratings?.[0]?.position?.name || 'Unknown')}</strong>
+                            <div class={getScoreClass(rec.player.ratings?.[0]?.overallRating || 0)}>
+                                {rec.player.ratings?.[0]?.overallRating || 'N/A'}
+                            </div>
+                        </div>
+                        <div>
+                            <span>Tier {rec.player.analysis?.positionTier || '?'}</span>
+                            <small>{getTierDescription(rec.player.analysis?.positionTier || 0)}</small>
+                        </div>
+                    </div>
                 
-                    <p>Historical Draft Position: 
-                        {#if rec.player.draftData}
-                            Round {rec.player.draftData.round}, 
-                            Pick {rec.player.draftData.round_pick} 
-                            (Overall: {rec.player.draftData.overall_pick})
-                        {:else}
-                            Not Available
-                        {/if}
-                    </p>
-                    <p class="reason">Analysis: {rec.reason}</p>
-                    <button 
-                        class="draft-button" 
-                        on:click={() => draftPlayer(rec)}
-                    >
-                        Draft Player
-                    </button>
+                    {#if rec.player.analysis}
+                    <div class="player-analysis">
+                <div class="score-section">
+                    <div>
+                        <span class={getScoreClass(rec.player.analysis.adjustedScore)}>
+                            {rec.player.analysis.adjustedScore.toFixed(1)}
+                        </span>
+                        <small>Composite Score</small>
+                    </div>
+                    <div class="multipliers">
+                        <span title="Age Impact">🔄 {(rec.player.analysis.ageMultiplier * 100).toFixed(0)}%</span>
+                        <span title="Development Potential">📈 {(rec.player.analysis.developmentMultiplier * 100).toFixed(0)}%</span>
+                    </div>
                 </div>
-            {/each}
-        </div>
-    </div>
-
-    <div class="roster-status">
-        <h3>Roster Status</h3>
-        <div class="roster-grid">
-            {#each Object.keys(POSITION_GROUPS) as group (group)}
-            {@const typedGroup = group as PositionGroup} 
-                <div class="position-group">
-                    <h4>{group}</h4>
-                    <div class="positions">
-                        {#each POSITION_GROUPS[typedGroup] as position}
-                            {@const req = rosterRequirements.find(r => r.position === position)}
-                            {#if req}
-                                <div class="roster-position"
-                                     class:fulfilled={(currentRosterCounts[position] || 0) >= req.minimumPlayers}
-                                     class:at-max={(currentRosterCounts[position] || 0) >= req.maximumPlayers}>
-                                    <span class="position-label">{position}</span>
-                                    <div class="roster-counts">
-                                        <span class="count">
-                                            {currentRosterCounts[position] || 0}/{req.maximumPlayers}
-                                        </span>
-                                        {#if (currentRosterCounts[position] || 0) < req.minimumPlayers}
-                                            <span class="warning">
-                                                Need {req.minimumPlayers - (currentRosterCounts[position] || 0)} more
-                                            </span>
-                                        {/if}
-                                    </div>
-                                    <div class="drafted-list">
-                                        {#if getDraftedPlayersByGroup()[typedGroup]?.[position]?.length}
-                                            {#each getDraftedPlayersByGroup()[typedGroup][position] as dp}
-                                                <div class="drafted-player">
-                                                    <div class="player-name">{dp.player.firstName} {dp.player.lastName}</div>
-                                                    <div class="player-rating">OVR: {dp.player.ratings[0]?.overallRating}</div>
-                                                    <div class="player-pick">R{dp.round}P{dp.pick}</div>
-                                                </div>
-                                            {/each}
-                                        {:else}
-                                            <div class="empty-position">-</div>
-                                        {/if}
-                                    </div>
-                                </div>
-                            {/if}
+        
+                {#if rec.player.analysis.secondaryPositions?.length}
+                <div class="secondary-positions">
+                    <h5>Alternative Positions</h5>
+                    <div class="positions-grid">
+                        {#each rec.player.analysis.secondaryPositions as pos}
+                            <div class="alt-position" class:elite={pos.isElite}>
+                                <span class="pos-name">{formatPosition(pos.position)}</span>
+                                <span class="pos-score">{pos.score.toFixed(1)}</span>
+                                {#if pos.isElite}
+                                    <span class="elite-badge">Elite</span>
+                                {/if}
+                            </div>
                         {/each}
                     </div>
                 </div>
-            {/each}
+                {/if}
+        
+                <div class="fit-scores">
+                    <div title="Scheme Fit">
+                        <span>🎯 {(rec.player.analysis.schemeFitScore * 100).toFixed(1)}%</span>
+                        <small>Scheme Fit</small>
+                    </div>
+                    <div title="Versatility">
+                        <span>🔄 {(rec.player.analysis.versatilityBonus * 100).toFixed(1)}%</span>
+                        <small>Versatility</small>
+                    </div>
+                </div>
+            </div>
+            {/if}
+        
+            <div class="draft-projection">
+                <div>
+                    <span>Round {rec.player.draftData?.round}</span>
+                    <span>Pick {rec.player.draftData?.round_pick}</span>
+                </div>
+                <div class="overall-pick">#{rec.player.draftData?.overall_pick}</div>
+            </div>
+        
+            <div class="recommendation-score">
+                <p>{(rec.recommendationScore * 100).toFixed(1)}% Match</p>
+                <p class="reason">{rec.reason}</p>
+            </div>
+        
+            <button class="draft-button" on:click={() => draftPlayer(rec)}>
+                Draft {rec.player.firstName} {rec.player.lastName}
+            </button>
         </div>
+    {/each}
+</div>
+</div>
+
+<div class="roster-status">
+    <h3>Roster Status</h3>
+    <div class="roster-grid">
+        {#each Object.keys(POSITION_GROUPS) as group (group)}
+        {@const typedGroup = group as PositionGroup} 
+            <div class="position-group">
+                <h4>{group}</h4>
+                <div class="positions">
+                    {#each POSITION_GROUPS[typedGroup] as position}
+                        {@const req = rosterRequirements[position as keyof typeof rosterRequirements]}
+                        {@const positionPlayers = getDraftedPlayersByPosition()[position] || []}
+                        {#if req}
+                            <div class="roster-position"
+                                class:fulfilled={(currentRosterCounts[position] || 0) >= req.min}
+                                class:at-max={(currentRosterCounts[position] || 0) >= req.max}>
+                                <span class="position-label">{position}</span>
+                                <div class="roster-counts">
+                                    <span class="count">
+                                        {currentRosterCounts[position] || 0}/{req.max}
+                                    </span>
+                                    {#if (currentRosterCounts[position] || 0) < req.min}
+                                        <span class="warning">
+                                            Need {req.min - (currentRosterCounts[position] || 0)} more
+                                        </span>
+                                    {/if}
+                                </div>
+                                <div class="drafted-list">
+                                    {#if positionPlayers.length}
+                                        {#each positionPlayers as dp}
+                                            <div class="drafted-player" class:secondary-position={dp.isSecondary}>
+                                                <div class="player-name">{dp.player.firstName} {dp.player.lastName}</div>
+                                                <div class="player-rating">OVR: {dp.player.ratings[0]?.overallRating}</div>
+                                                <div class="player-pick">R{dp.round}P{dp.pick}</div>
+                                                {#if dp.isSecondary}
+                                                    <div class="secondary-badge" title="Secondary Position Score">
+                                                        {dp.secondaryScore?.toFixed(1)}
+                                                    </div>
+                                                {/if}
+                                            </div>
+                                        {/each}
+                                    {:else}
+                                        <div class="empty-position">-</div>
+                                    {/if}
+                                </div>
+                            </div>
+                        {/if}
+                    {/each}
+                </div>
+            </div>
+        {/each}
     </div>
+</div>
 
     <div class="draft-status-container">
         <button class="undo-button" on:click={undoLastPick}>Undo Last Pick</button>

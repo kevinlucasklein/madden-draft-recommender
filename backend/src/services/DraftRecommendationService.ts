@@ -216,6 +216,131 @@ export class DraftRecommendationService {
         return currentPick;
     }
 
+    private async getNextUserPick(
+        sessionId: number, 
+        currentRound: number, 
+        currentOverallPick: number
+    ): Promise<DraftPick | undefined> {
+        const picks = this.userPicks.get(sessionId);
+        if (!picks) return undefined;
+    
+        // Find next pick after current overall pick
+        return picks.find(p => p.overall > currentOverallPick);
+    }
+
+    private async analyzeDraftValueOpportunity(
+        player: Player,
+        availablePlayers: Player[],
+        currentOverallPick: number,
+        nextUserPick: DraftPick | undefined
+    ): Promise<{
+        multiplier: number;
+        reason: string;
+    }> {
+        if (!nextUserPick || !player.draftData) {
+            return { multiplier: 1.0, reason: "No next pick data available" };
+        }
+    
+        const position = player.ratings?.[0]?.position?.name;
+        const projectedPick = player.draftData.overall_pick;
+        const picksBetween = nextUserPick.overall - currentOverallPick;
+    
+        // If player is projected to be available at next pick, heavily penalize
+        if (projectedPick >= nextUserPick.overall) {
+            return {
+                multiplier: 0.1, // This will effectively remove them from recommendations
+                reason: `Should be available at pick #${nextUserPick.overall}`
+            };
+        }
+    
+        // Find quality players at same position available at next pick
+        const availableAtNextPick = availablePlayers.filter(p => 
+            p.ratings?.[0]?.position?.name === position &&
+            p.draftData &&
+            p.draftData.overall_pick >= nextUserPick.overall &&
+            p.analysis?.adjustedScore && 
+            p.analysis.adjustedScore > 75  // Only count quality players
+        );
+    
+        // Calculate talent drop-off
+        const currentTierPlayers = availablePlayers.filter(p =>
+            p.ratings?.[0]?.position?.name === position &&
+            p.draftData &&
+            p.draftData.overall_pick <= currentOverallPick &&
+            p.analysis?.adjustedScore &&
+            p.analysis.adjustedScore > 75
+        );
+    
+        // Special QB Analysis
+        if (position === 'QB') {
+            const eliteQBsAvailable = availablePlayers.filter(p => 
+                p.ratings?.[0]?.position?.name === 'QB' &&
+                p.analysis?.adjustedScore &&
+                p.analysis.adjustedScore > 85
+            );
+
+            // If this is an elite QB (Mahomes, Jackson, Allen)
+            if (player.analysis?.adjustedScore && player.analysis.adjustedScore > 85) {
+                const urgencyMultiplier = 2.0 + (picksBetween / 100);  // Increased from 1.6
+                return {
+                    multiplier: urgencyMultiplier,
+                    reason: 'Elite QB talent - must draft now'
+                };
+            }
+
+            // If this is a good QB (Stroud, Hurts)
+            if (player.analysis?.adjustedScore && player.analysis.adjustedScore > 80) {
+                const urgencyMultiplier = 1.5 + (picksBetween / 100);  // Increased from 1.3
+                return {
+                    multiplier: urgencyMultiplier,
+                    reason: 'Quality QB likely gone by next pick'
+                };
+            }
+        }
+    
+        // Premium position analysis (non-QB)
+        const premiumPositions = ['LT', 'EDGE', 'CB'];
+        const isPremiumPosition = premiumPositions.includes(position || '');
+    
+        // Calculate urgency multiplier
+        let urgencyMultiplier = 1.0;
+        let reason = '';
+    
+        if (projectedPick < nextUserPick.overall) {
+            // Base urgency from picks between
+            urgencyMultiplier = 1 + (picksBetween / 100);
+    
+            // Add premium position bonus
+            if (isPremiumPosition) {
+                urgencyMultiplier *= 1.2;
+            }
+    
+            // Add talent drop-off multiplier
+            if (availableAtNextPick.length === 0 && currentTierPlayers.length > 0) {
+                urgencyMultiplier *= 1.3;
+                reason = `Last ${position} of this tier before pick #${nextUserPick.overall}`;
+            } else {
+                reason = `Likely gone by next pick (#${nextUserPick.overall})`;
+            }
+    
+            return { multiplier: urgencyMultiplier, reason };
+        }
+    
+        // If available later, but it's a premium position with limited options
+        if (isPremiumPosition && availableAtNextPick.length <= 1) {
+            return {
+                multiplier: 0.85,
+                reason: `Might be available at #${nextUserPick.overall} but limited options remain`
+            };
+        }
+    
+        // Standard availability at next pick
+        return {
+            multiplier: 0.7,
+            reason: `Should be available at pick #${nextUserPick.overall}`
+        };
+    }
+
     async generate(input: GenerateRecommendationsInput): Promise<DraftRecommendation[]> {
         try {
             const session = await this.sessionRepository.findOneOrFail({
@@ -231,6 +356,11 @@ export class DraftRecommendationService {
                     }
                 }
             });
+            // Get drafted player IDs
+            const draftedPlayerIds = (session.picks ?? [])
+                .filter(pick => pick.player)
+                .map(pick => pick.player.id);
+
             // Get current roster optimization
             const currentRoster = this.rosterOptimizationService.optimizeRoster(session.picks ?? []);
             const positionNeeds = this.rosterOptimizationService.getPositionalNeeds(
@@ -266,22 +396,23 @@ export class DraftRecommendationService {
                 throw new Error('Invalid pick position or session not initialized');
             }
 
-            // Use overall pick from calculator
-            const overallPick = currentPick.overall;
-
-            // Calculate pick range based on round
-            const baseRange = 10;
-            const roundMultiplier = Math.ceil(input.roundNumber / 2);
-            const pickRange = baseRange * roundMultiplier;
+            const overallPick = currentPick.overall;  // 12
+            const nextPick = await this.getNextUserPick(
+                input.sessionId,
+                input.roundNumber,
+                currentPick.overall
+            );  // Would be #21 (2nd round)
             
-            // Calculate pick range - only look ahead, not behind
-            const minPick = Math.max(1, overallPick - 10);  // At most 10 picks before
-            const maxPick = overallPick + pickRange;        // Keep existing forward range
+            // Calculate pick range
+            const minPick = Math.max(1, overallPick - 7);
+            const maxPick = nextPick ? nextPick.overall - 1 : overallPick + 10; // Fallback if no next pick
 
             console.log(`Round ${input.roundNumber}, Pick ${input.pickNumber} (Overall ${overallPick})`);
             console.log(`Looking for players between picks ${minPick} and ${maxPick}`);
     
             // Get available players with draft data within our range
+            // Modified query to exclude drafted players
+            // Inside generate method, modify the player query:
             let availablePlayers = await this.playerRepository.find({
                 relations: {
                     ratings: {
@@ -290,11 +421,17 @@ export class DraftRecommendationService {
                     draftData: true,
                     analysis: true
                 },
-                where: {
-                    draftData: {
-                        overall_pick: Between(minPick, maxPick)
+                where: [
+                    {
+                        id: Not(In(draftedPlayerIds)),  // Exclude drafted players
+                        draftData: {
+                            overall_pick: Between(
+                                Math.max(1, overallPick - 7),  // Only look 7 picks back
+                                maxPick
+                            )
+                        }
                     }
-                },
+                ],
                 select: {
                     id: true,
                     firstName: true,
@@ -324,9 +461,9 @@ export class DraftRecommendationService {
                 }
             });
 
+            // Modified fallback query
             if (availablePlayers.length === 0) {
                 console.log('No players found within pick range, expanding search...');
-                // If no players found, try without the range restriction
                 availablePlayers = await this.playerRepository.find({
                     relations: {
                         ratings: {
@@ -334,9 +471,12 @@ export class DraftRecommendationService {
                         },
                         draftData: true
                     },
-                    where: {
-                        draftData: Not(IsNull())  // Ensure we only get players with draft data
-                    },
+                    where: [
+                        {
+                            id: Not(In(draftedPlayerIds)),  // Exclude drafted players
+                            draftData: Not(IsNull())
+                        }
+                    ],
                     select: {
                         id: true,
                         firstName: true,
@@ -368,67 +508,87 @@ export class DraftRecommendationService {
     
             const recommendations: DraftRecommendation[] = [];
 
-            // Modify the scoring logic
+            // Inside generate method, modify the scoring section:
             for (const player of availablePlayers) {
                 const position = player.ratings?.[0]?.position?.name || 'Unknown Position';
-
-                // Inside the for loop in generate method
                 const playerName = `${player.firstName || ''} ${player.lastName || ''}`.trim();
-                const analysis = player.analysis;  // Add this line
-                
-                // Calculate recommendation score with optimized roster consideration
-                let recommendationScore = analysis?.adjustedScore || 0;
-                recommendationScore = recommendationScore / 100;
-    
+                const analysis = player.analysis;
+
+                // Start with base score (0-1 scale)
+                let recommendationScore = (analysis?.adjustedScore || 0) / 100;
+
+                // Get next pick information
+                const nextPick = await this.getNextUserPick(
+                    input.sessionId,
+                    input.roundNumber,
+                    currentPick.overall
+                );
+
+                // Get all multipliers
                 const scarcityMultiplier = await this.calculatePositionScarcity(
                     position,
                     availablePlayers,
                     overallPick,
                     session,
-                    positionNeeds  // Pass the optimized position needs
+                    positionNeeds
                 );
-    
+
                 const qualityMultiplier = await this.calculatePositionQuality(
                     player,
                     availablePlayers
                 );
-    
+
                 const roundMultiplier = this.getDraftPositionValue(input.roundNumber);
-    
-                // Apply multipliers
-                recommendationScore *= (1 + ((scarcityMultiplier - 1) * 0.3));
-                recommendationScore *= (1 + ((qualityMultiplier - 1) * 0.3));
-                recommendationScore *= roundMultiplier;
-    
-                // Consider secondary positions in recommendation
-                if (player.analysis?.secondaryPositions) {
-                    const secondaryBonus = this.calculateSecondaryPositionBonus(
-                        player.analysis.secondaryPositions,
-                        positionNeeds
+
+                const { multiplier: valueOpportunityMultiplier, reason: valueReason } = 
+                    await this.analyzeDraftValueOpportunity(
+                        player,
+                        availablePlayers,
+                        currentPick.overall,
+                        nextPick
                     );
-                    recommendationScore *= (1 + secondaryBonus);
-                }
 
-            // Ensure score is valid but don't automatically cap at 1
-            recommendationScore = Math.max(0, Math.min(recommendationScore, 1));
+                // Apply weighted adjustments
+                recommendationScore = (
+                    // Base score (70% weight)
+                    (recommendationScore * 0.70) +
+                    // Position need & scarcity (20% weight)
+                    (recommendationScore * (scarcityMultiplier - 1) * 0.20) +
+                    // Draft value opportunity (10% weight)
+                    (recommendationScore * (valueOpportunityMultiplier - 1) * 0.10)
+                );
 
-            console.log('Score Components:', {
-                playerName,
-                position,
-                baseScore: analysis?.adjustedScore,
-                normalizedBaseScore: analysis?.adjustedScore ? analysis.adjustedScore / 100 : 0,
-                scarcityMultiplier,
-                qualityMultiplier,
-                roundMultiplier,
-                finalScore: recommendationScore.toFixed(4)  // Show more decimal places
-            });
+                // Apply sigmoid function
+                recommendationScore = 1 / (1 + Math.exp(-5 * (recommendationScore - 0.5)));
+
+                console.log('Score Components:', {
+                    playerName,
+                    position,
+                    baseScore: (analysis?.adjustedScore || 0) / 100,
+                    projectedPick: player.draftData?.overall_pick,
+                    nextUserPick: nextPick?.overall,
+                    scarcityComponent: (scarcityMultiplier - 1) * 0.20,
+                    qualityComponent: (qualityMultiplier - 1) * 0.15,
+                    roundComponent: (roundMultiplier - 1) * 0.10,
+                    valueComponent: (valueOpportunityMultiplier - 1) * 0.05,
+                    valueReason,
+                    finalScore: recommendationScore.toFixed(4)
+                });
+
+                // Update the reason string to include draft value information
+                const reasonParts = [
+                    `${position} - ${playerName}`,
+                    `Projected: Pick ${player.draftData?.overall_pick || 'Unknown'}, Rating: ${player.ratings?.[0]?.overallRating || 'Unknown'}`,
+                    valueReason
+                ];
 
                 const recommendation = this.recommendationRepository.create({
                     session: { id: input.sessionId },
                     player: { id: player.id },
                     roundNumber: input.roundNumber,
                     pickNumber: input.pickNumber,
-                    recommendationScore
+                    recommendationScore,
+                    reason: reasonParts.join(' | ')
                 });
 
                 recommendations.push(recommendation);
@@ -498,30 +658,6 @@ export class DraftRecommendationService {
         return Math.max(0.2, multiplier);
     }
 
-    private calculateSecondaryPositionBonus(
-        secondaryPositions: Array<{
-            position: string;
-            score: number;
-            tier: number;
-            isElite: boolean;
-        }>,
-        positionNeeds: Record<string, { needed: number; priority: number }>
-    ): number {
-        let bonus = 0;
-        
-        for (const sp of secondaryPositions) {
-            if (sp.isElite || sp.tier <= 2) {  // Only consider elite or high-tier secondary positions
-                const need = positionNeeds[sp.position];
-                if (need && need.needed > 0) {
-                    // Add bonus based on need and position quality
-                    bonus += (0.1 * need.priority * (sp.isElite ? 1.5 : 1.0));
-                }
-            }
-        }
-    
-        return Math.min(0.3, bonus);  // Cap total bonus at 30%
-    }
-
     private async calculatePositionScarcity(
         position: string,
         availablePlayers: Player[],
@@ -555,6 +691,11 @@ export class DraftRecommendationService {
         // Get roster needs
         const rosterNeeds = session.getRosterNeeds();
         const positionNeeds = rosterNeeds[position as keyof typeof rosterNeeds];
+
+        // If we don't need any more at this position, apply heavy penalty
+        if (positionNeeds && positionNeeds.needed <= 0) {
+            return 0.3;  // Strong penalty for positions we don't need
+        }
     
         // Count unfilled minimum requirements across all positions
         const unfilledPositions = Object.entries(rosterNeeds)
@@ -587,35 +728,38 @@ export class DraftRecommendationService {
     
         // Calculate base scarcity multiplier from talent availability
         let scarcityMultiplier = 1.0;
-        if (tier1Players === 0) scarcityMultiplier = 1.5;
-        else if (tier1Players <= 2) scarcityMultiplier = 1.4;
-        else if (tier2Players <= 5) scarcityMultiplier = 1.3;
-        else if (tier3Players <= 10) scarcityMultiplier = 1.2;
+        if (tier1Players === 0) scarcityMultiplier = 1.3;      // Reduced from 1.5
+        else if (tier1Players <= 2) scarcityMultiplier = 1.25; // Reduced from 1.4
+        else if (tier2Players <= 5) scarcityMultiplier = 1.2;  // Reduced from 1.3
+        else if (tier3Players <= 10) scarcityMultiplier = 1.15; // Reduced from 1.2
     
         // Adjust for roster needs with stronger modifiers
+        // Adjust for roster needs with more balanced modifiers
         if (positionNeeds) {
             if (positionNeeds.current < positionNeeds.min) {
-                // Boost unfilled positions more aggressively
                 const remainingNeeded = positionNeeds.min - positionNeeds.current;
-                scarcityMultiplier *= (1.5 + (0.1 * remainingNeeded));  // Increased from 1.2
+                scarcityMultiplier *= (1.2 + (0.05 * remainingNeeded));  // Reduced from 1.5 + 0.1
                 
-                // Extra boost if this is one of few remaining unfilled positions
                 if (totalUnfilledPositions <= 3) {
-                    scarcityMultiplier *= 1.3;  // Priority boost for last few positions
+                    scarcityMultiplier *= 1.15;  // Reduced from 1.3
                 }
             } else if (positionNeeds.current >= positionNeeds.max) {
-                scarcityMultiplier *= 0.3;  // Stronger penalty (was 0.5)
+                scarcityMultiplier *= 0.5;  // Less severe penalty
             } else if (positionNeeds.current >= positionNeeds.min) {
-                // More aggressive penalty when minimums aren't met elsewhere
-                const penaltyMultiplier = Math.min(0.8, 0.9 - (0.05 * totalUnfilledPositions));
+                const penaltyMultiplier = Math.min(0.9, 0.95 - (0.025 * totalUnfilledPositions));
                 scarcityMultiplier *= penaltyMultiplier;
             }
-    
-            // Apply urgent positions penalty
+
+            // Reduced urgent positions penalty
             if (unfilledPositions.length > 0 && !unfilledPositions.includes(position)) {
-                // Stronger penalty when position is already filled and others need attention
-                scarcityMultiplier *= (1 - (0.15 * unfilledPositions.length));
+                scarcityMultiplier *= (1 - (0.075 * unfilledPositions.length));  // Reduced from 0.15
             }
+        }
+
+            // Special case for QB
+        // For QBs, increase base scarcity
+        if (position === 'QB' && tier1Players <= 4) {
+            scarcityMultiplier = 2.6; 
         }
     
         console.log('Position Scarcity:', {
@@ -640,24 +784,46 @@ export class DraftRecommendationService {
     ): Promise<number> {
         const position = player.ratings?.[0]?.position?.name;
         if (!position) return 1.0;
-
-        // Get all players at this position
+    
         const positionPlayers = availablePlayers.filter(p => 
             p.ratings?.[0]?.position?.name === position
         );
-
-        // Calculate player's percentile rank at their position
+    
         const betterPlayers = positionPlayers.filter(p => 
             (p.analysis?.adjustedScore || 0) > (player.analysis?.adjustedScore || 0)
         ).length;
-
+    
         const percentileRank = 1 - (betterPlayers / positionPlayers.length);
         
-        // Return quality multiplier based on percentile
-        if (percentileRank >= 0.9) return 1.4;  // Top 10%
-        if (percentileRank >= 0.8) return 1.2;  // Top 20%
-        if (percentileRank >= 0.6) return 1.1;  // Top 40%
+        // More balanced multipliers
+        if (percentileRank >= 0.9) return 1.25;  // Elite talent
+        if (percentileRank >= 0.8) return 1.2;   // Top talent
+        if (percentileRank >= 0.6) return 1.15;  // Good talent
         return 1.0;
+    }
+    
+    private calculateSecondaryPositionBonus(
+        secondaryPositions: Array<{
+            position: string;
+            score: number;
+            tier: number;
+            isElite: boolean;
+        }>,
+        positionNeeds: Record<string, { needed: number; priority: number }>
+    ): number {
+        let bonus = 0;
+        
+        for (const sp of secondaryPositions) {
+            if (sp.isElite || sp.tier <= 2) {
+                const need = positionNeeds[sp.position];
+                if (need && need.needed > 0) {
+                    // Reduced bonus
+                    bonus += (0.05 * need.priority * (sp.isElite ? 1.3 : 1.0));
+                }
+            }
+        }
+    
+        return Math.min(0.15, bonus);  // Cap reduced to 15% (was 30%)
     }
 
     async create(input: CreateDraftRecommendationInput): Promise<DraftRecommendation> {

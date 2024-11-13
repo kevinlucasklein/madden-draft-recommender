@@ -32,6 +32,7 @@ input CreateDraftRecommendationInput {
 
 input CreateDraftSessionInput {
   draftPosition: Int!
+  isSnakeDraft: Boolean! = true
   rosterNeeds: String
   status: String! = "ACTIVE"
 }
